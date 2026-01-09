@@ -2,6 +2,8 @@
 from backend.config import client
 
 # 🎯 Danh sách intent
+ 
+
 INTENTS = {
     "hoi_dieu_kien_tot_nghiep_ctdt": "Hỏi về điều kiện tốt nghiệp hoặc chuẩn đầu ra của một chương trình đào tạo cụ thể.",
     "hoi_chuan_ngoai_ngu_dau_ra_chung": "Hỏi về chuẩn ngoại ngữ đầu ra chung của toàn trường (không nêu chương trình cụ thể).",
@@ -28,10 +30,12 @@ class IntentDetector:
 Bạn là bộ phân loại intent cho chatbot học vụ Đại học Bách Khoa.
 
 Phân loại câu hỏi vào **một trong các intent sau**:
-1  hoi_dieu_kien_tot_nghiep_chung → Chỉ áp dụng khi có từ khóa là: "Điều kiện tốt nghiệp là gì".
-    Lưu Ý: Nếu không có từ khóa "Điều kiện tốt nghiệp là gì" thì chắc chắn không phải là trường hợp này.
-
-2  hoi_dieu_kien_tot_nghiep_ctdt → có tên chương trình ví dụ  như "Điều kiện tốt nghiệp của Công nghệ thông tin Nhật là gì".
+ 1  hoi_dieu_kien_tot_nghiep_chung → Chỉ áp dụng khi có từ khóa là: "Điều kiện tốt nghiệp là gì".
+     Lưu Ý: Nếu không có từ khóa "Điều kiện tốt nghiệp là gì" thì chắc chắn không phải là trường hợp này.
+2  hoi_dieu_kien_tot_nghiep_ctdt → chỉ áp dụng khi thỏa 2 điều kiện sau: 
+    - thứ nhất bắt buộc phải có từ khóa "Điều kiện tốt nghiệp" 
+    - thứ hai bắt buộc phải có tên chương trình ví dụ  như "Điều kiện tốt nghiệp của Công nghệ thông tin Nhật là gì".
+    - Nếu không có tên chương trình mà chỉ có từ khóa "Điều kiện tốt nghiệp" thì intent là hoi_dieu_kien_tot_nghiep_chung 
 3  hoi_chuan_ngoai_ngu_dau_ra_chung → hỏi về chuẩn ngoại ngữ đầu ra của trường, ví dụ:
     - "Chuẩn ngoại ngữ đầu ra là gì?"
     - "Ra trường cần đạt chứng chỉ tiếng Anh nào?"

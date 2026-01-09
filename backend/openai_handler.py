@@ -402,6 +402,7 @@ Yêu cầu:
     6 **Học phần đồ án**
     - “Những học phần đồ án của chương trình đào tạo A?”
     - “Chương trình A có những học phần đồ án nào?”
+    - "trong chương trình đào tạo A những học phần nào là học phần đồ án?"
     → Lọc theo từ khóa:
     - "PBL""
 
@@ -544,6 +545,7 @@ Yêu cầu:
     2) Hỏi tiên quyết của một học phần X (các môn phải học trước X) Trong chương trình đào tạo bất kỳ
     Ví dụ:
         - "Để học Vi xử lý chương trình A cần học trước môn nào?"
+        - "Trong chương trình A học phần tiên quyết của lập trình hướng đối tượng là gì?"
         - "Môn Cấu trúc dữ liệu chương trình A có tiên quyết gì không?"
     Nếu có: trả các tên môn (mỗi môn trên 1 dòng) kèm tiền tố ngắn:
         - "Tiên quyết của X: A"
@@ -643,9 +645,11 @@ Yêu cầu:
     2) **Hỏi song hành của một học phần X**
     Ví dụ:
     - "Trong CTĐT A môn X song hành với môn nào?"
-    -"Học phần nào có mối quan hệ song hành với môn X trong CTĐT A"
-    -"Trong CTĐT A học phần nào có thể học cùng lúc với môn X"
-    → Nếu hp1 = X → hp2 hoặc hp2 = X → hp1:
+    -"Học phần nào có mối quan hệ song hành với môn X trong CTĐT A?"
+    -"Trong CTĐT A học phần nào có thể học cùng lúc với môn X?"
+    -"trong CTĐT A tôi có thể học môn X cùng lúc với Y được không?"
+   
+     → Nếu hp1 = X → hp2 hoặc hp2 = X → hp1:
         - "Song hành của X là Y"
     → Nếu không có:
         - "Học phần X không có học phần song hành"
@@ -656,6 +660,7 @@ Yêu cầu:
     Ví dụ:
     - "Tôi có thể học A và B cùng lúc trong chương trình C không?"
     - "Trong chương trình C A và B có phải song hành không?"
+    - "Trong chương trình C tôi có thể học A và B cùng lúc được không?"
 
     Nếu A ↔ B xuất hiện trong JSON:
 

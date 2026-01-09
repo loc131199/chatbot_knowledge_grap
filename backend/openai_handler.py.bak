@@ -1,0 +1,77 @@
+# backend/openai_handler.py
+import os
+from openai import OpenAI
+from backend import config
+
+class OpenAIHandler:
+    def __init__(self):
+        # Ưu tiên lấy API key từ config.py, nếu không có thì lấy từ biến môi trường
+        self.api_key = getattr(config, "OPENAI_API_KEY", None) or os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise ValueError("❌ OPENAI_API_KEY chưa được đặt trong biến môi trường hoặc config.py")
+
+        # Kết nối OpenAI
+        self.client = OpenAI(api_key=self.api_key)
+
+        # Model LLM (ưu tiên gpt-4o-mini để rẻ/nhanh; có thể đổi sang gpt-4o nếu muốn)
+        self.model = getattr(config, "MODEL_LLM", "gpt-4o-mini")
+
+    def generate_response_with_context(self, question: str, context: str) -> str:
+        """
+        Sinh câu trả lời nhưng CHỈ dựa vào context từ Neo4j.
+        Nếu không có thông tin trong context, trả về thông báo an toàn.
+        Đầu ra định dạng HTML để frontend hiển thị rõ ràng.
+        """
+        try:
+            system_prompt = (
+                "Bạn là trợ lý cho sinh viên Đại học Bách Khoa Đà Nẵng. "
+                "TUYỆT ĐỐI chỉ sử dụng dữ liệu trong NGỮ CẢNH (context) được cung cấp. "
+                "Không được suy đoán, không thêm thông tin từ nguồn bên ngoài. "
+                "Nếu ngữ cảnh chỉ nhắc người dùng cần cung cấp thêm thông tin, "
+                "hãy diễn đạt lại lịch sự, dễ hiểu. "
+                "Nếu ngữ cảnh không có thông tin, trả về đúng chuỗi: KHONG_CO_THONG_TIN_TRONG_NGU_CANH. "
+                "Luôn định dạng HTML với <p>, <ul>, <li>, <strong>, <br>."
+            )
+
+            user_prompt = (
+                f"NGỮ CẢNH (phải tuân thủ tuyệt đối):\n{context}\n\n"
+                f"CÂU HỎI CỦA NGƯỜI DÙNG:\n{question}\n\n"
+                "YÊU CẦU:\n"
+                "- Chỉ sử dụng dữ liệu trong NGỮ CẢNH.\n"
+                "- Không thêm thông tin ngoài.\n"
+                "- Trả lời bằng HTML (dùng <ul><li> khi cần liệt kê, <p> cho đoạn, <strong> để nhấn mạnh)."
+            )
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.0
+            )
+
+            text = response.choices[0].message.content.strip()
+
+            if text == "KHONG_CO_THONG_TIN_TRONG_NGU_CANH":
+                return (
+                    "<p>Xin lỗi, hiện chưa có dữ liệu trong đồ thị kiến thức cho câu hỏi này.</p>"
+                    "<p>Bạn vui lòng cung cấp rõ hơn, ví dụ: tên <strong>chương trình đào tạo</strong> hoặc "
+                    "<strong>chứng chỉ ngoại ngữ</strong> để mình tra cứu chính xác.</p>"
+                )
+
+            return text
+
+        except Exception as e:
+            return f"<p>[LỖI OpenAI (Context)]: {str(e)}</p>"
+
+    def generate_llm_only_response(self, question: str) -> str:
+        """
+        Khi không có context → KHÔNG cho phép LLM bịa ra.
+        Trả lời an toàn, yêu cầu người dùng cung cấp thêm dữ liệu để truy vấn đồ thị.
+        """
+        return (
+            "<p>Xin lỗi, mình chưa tìm thấy thông tin trong đồ thị kiến thức cho câu hỏi này.</p>"
+            "<p>Bạn có thể cung cấp rõ hơn (ví dụ: tên <strong>chương trình đào tạo</strong>, "
+            "<strong>ngoại ngữ/chứng chỉ</strong> mà bạn quan tâm) để mình hỗ trợ chính xác hơn nhé.</p>"
+        )
