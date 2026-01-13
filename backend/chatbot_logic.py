@@ -31,14 +31,14 @@ class ChatbotLogic:
         # ---- 3️⃣ Xử lý theo intent ----
         if intent == "hoi_dieu_kien_tot_nghiep_chung":
             data = self.neo4j_handle.get_dieu_kien_tot_nghiep_chung()
-            return self.openai_handler.summarize_graduation_conditions(data, question_transformed)
+            return self.openai_handler.summarize_graduation_conditions_chung(data, question_transformed)
         
         elif intent == "hoi_dieu_kien_tot_nghiep_ctdt":
             # question gốc để BM25 tìm đúng CTĐT
             data = self.neo4j_handle.get_dieu_kien_tot_nghiep_ctdt(question)
             if not data:
                 return "Xin lỗi, tôi không tìm thấy thông tin về điều kiện tốt nghiệp của chương trình này."
-            summarized = self.openai_handler.summarize_graduation_conditions(data, question)
+            summarized = self.openai_handler.summarize_graduation_conditions_ctdt(data, question)
             return summarized
         
         elif intent == "chuan_ngoai_ngu_ctdt":

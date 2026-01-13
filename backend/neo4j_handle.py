@@ -95,22 +95,20 @@ class Neo4jHandler:
     # Lấy điều kiện tốt nghiệp chung
     # ==========================
     def get_dieu_kien_tot_nghiep_chung(self):
-        """
-        Pipeline:
-        1️⃣ Biến đổi câu hỏi nếu cần
-        2️⃣ BM25 search trên Neo4j
-        3️⃣ Lấy dữ liệu chi tiết ChuongTrinhDaoTao + DieuKienTotNghiep + ngoại ngữ
-        """
         query = "*"  # tìm tất cả chương trình
         cypher = """
         CALL db.index.fulltext.queryNodes('ChuongTrinhDaoTao_full_text', $query)
         YIELD node AS ctdt, score
+
         OPTIONAL MATCH (dk:DieuKienTotNghiep)-[r:ĐOI_VOI]->(ctdt)
-        OPTIONAL MATCH (ctdt)-[:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|:CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
+
+        OPTIONAL MATCH (ctdt)-[rel:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
         WHERE lang IS NOT NULL
+
         WITH 
             ctdt, dk, r, score,
             collect({
+                he: rel.he,
                 lang_type: HEAD(labels(lang)),
                 thong_tin_ngoai_ngu: CASE HEAD(labels(lang))
                     WHEN 'TiengAnh' THEN {
@@ -138,12 +136,14 @@ class Neo4jHandler:
                     ELSE NULL
                 END
             }) AS ngoai_ngu_list
+
         RETURN 
             ctdt.ten_chuong_trinh AS ten_chuong_trinh,
             dk.dieu_kien_chung AS dieu_kien_chung,
             coalesce(r.dieu_kien_rieng, "Không có yêu cầu riêng.") AS dieu_kien_rieng,
             [x IN ngoai_ngu_list WHERE x.lang_type IS NOT NULL] AS ngoai_ngu_list,
             score
+
         ORDER BY score DESC, ten_chuong_trinh
         """
         with self.driver.session() as session:
@@ -157,35 +157,31 @@ class Neo4jHandler:
     # Lấy điều kiện tốt nghiệp CTĐT cụ thể
     # ==========================
     def get_dieu_kien_tot_nghiep_ctdt(self, question: str):
-        
-        # 1️⃣ Biến đổi câu hỏi nếu cần
-        #transformed_question = self.intent_detector.transform_question(question)
 
-        # 2️⃣ BM25 search: tìm tên CTĐT khớp với câu hỏi
         bm25_results = self.bm25_search(question, limit=1)
         if not bm25_results:
             logger.warning(f"⚠️ Không tìm thấy CTĐT cho truy vấn: {question}")
-            return {
-                "ten_chuong_trinh": question,
-                "dieu_kien_chung": None,
-                "dieu_kien_rieng": None,
-                "thong_tin_ngoai_ngu": []
-            }
+            return None
 
         ten_ctdt = bm25_results[0]["ten_chuong_trinh"]
+
 
         # 3️⃣ Truy vấn chi tiết node
         cypher = """
         CALL db.index.fulltext.queryNodes('ChuongTrinhDaoTao_full_text', $ten_ctdt)
         YIELD node AS ctdt, score
         WHERE toLower(ctdt.ten_chuong_trinh) CONTAINS toLower($ten_ctdt)
+
         OPTIONAL MATCH (dk:DieuKienTotNghiep)-[r:ĐOI_VOI]->(ctdt)
-        OPTIONAL MATCH (ctdt)-[:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|:CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
+
+        OPTIONAL MATCH (ctdt)-[rel:CO_CHUAN_NGOAI_NGU_DAU_RA_LA]->(lang)
+
         WITH 
             ctdt, dk, r, score,
             collect({
-                lang_type: labels(lang)[0],
-                thong_tin_ngoai_ngu: CASE labels(lang)[0]
+                he: rel.he,
+                lang_type: HEAD(labels(lang)),
+                thong_tin_ngoai_ngu: CASE HEAD(labels(lang))
                     WHEN 'TiengAnh' THEN {
                         bac: lang.bac,
                         Cambridge: lang.Cambridge,
@@ -211,34 +207,35 @@ class Neo4jHandler:
                     ELSE null
                 END
             }) AS ngoai_ngu_list
+
         RETURN 
             ctdt.ten_chuong_trinh AS ten_chuong_trinh,
             dk.dieu_kien_chung AS dieu_kien_chung,
             coalesce(r.dieu_kien_rieng, "Không có yêu cầu riêng.") AS dieu_kien_rieng,
-            [x IN ngoai_ngu_list WHERE x.lang_type IS NOT NULL] AS thong_tin_ngoai_ngu,
+
+            [x IN ngoai_ngu_list WHERE x.he = "Cử nhân"] AS chuan_ngoai_ngu_cu_nhan,
+
+            [x IN ngoai_ngu_list WHERE x.he = "Kỹ sư"] AS chuan_ngoai_ngu_ky_su,
+
             score
         ORDER BY score DESC
         LIMIT 1;
         """
-
         with self.driver.session() as session:
-            record = session.run(cypher, {"ten_ctdt": ten_ctdt}).single()
+                record = session.run(cypher, {"ten_ctdt": ten_ctdt}).single()
 
         if not record:
             logger.warning(f"⚠️ Không tìm thấy chi tiết CTĐT: {ten_ctdt}")
-            return {
-                "ten_chuong_trinh": ten_ctdt,
-                "dieu_kien_chung": None,
-                "dieu_kien_rieng": None,
-                "thong_tin_ngoai_ngu": []
-            }
+            return None
 
         data = {
             "ten_chuong_trinh": record["ten_chuong_trinh"],
             "dieu_kien_chung": record["dieu_kien_chung"],
             "dieu_kien_rieng": record["dieu_kien_rieng"],
-            "thong_tin_ngoai_ngu": record["thong_tin_ngoai_ngu"],
+            "chuan_ngoai_ngu_cu_nhan": record["chuan_ngoai_ngu_cu_nhan"],
+            "chuan_ngoai_ngu_ky_su": record["chuan_ngoai_ngu_ky_su"]
         }
+
         logger.info(f"🎓 Lấy điều kiện tốt nghiệp cho CTĐT: {ten_ctdt}")
         return data
 
@@ -248,11 +245,14 @@ class Neo4jHandler:
     def get_chuan_ngoai_ngu_dau_ra_chung(self):
         query = """
         MATCH (ctdt:ChuongTrinhDaoTao)
-        OPTIONAL MATCH (ctdt)-[:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
+
+        OPTIONAL MATCH (ctdt)-[rel:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
         WHERE lang IS NOT NULL
+
         WITH 
             ctdt,
             collect({
+                he: rel.he,
                 lang_type: HEAD(labels(lang)),
                 thong_tin_ngoai_ngu: CASE HEAD(labels(lang))
                     WHEN 'TiengAnh' THEN {
@@ -280,9 +280,18 @@ class Neo4jHandler:
                     ELSE NULL
                 END
             }) AS ngoai_ngu_list
+
         RETURN 
             ctdt.ten_chuong_trinh AS ten_chuong_trinh,
-            [x IN ngoai_ngu_list WHERE x.lang_type IS NOT NULL] AS ngoai_ngu_list
+
+            [x IN ngoai_ngu_list 
+                WHERE x.lang_type IS NOT NULL AND x.he = "Cử nhân"] 
+                AS chuan_ngoai_ngu_cu_nhan,
+
+            [x IN ngoai_ngu_list 
+                WHERE x.lang_type IS NOT NULL AND x.he = "Kỹ sư"] 
+                AS chuan_ngoai_ngu_ky_su
+
         ORDER BY ten_chuong_trinh;
         """
         with self.driver.session() as session:

@@ -19,87 +19,100 @@ class OpenAIHandler:
         return response.data[0].embedding
 
     # ---------- Summarization ----------
+    def summarize_graduation_conditions_chung(self, data, question):
 
-    def summarize_graduation_conditions(self, data, question):
-        """
-        Tổng hợp điều kiện tốt nghiệp (chung hoặc của 1 CTĐT cụ thể),
-        bao gồm chi tiết chuẩn ngoại ngữ đầu ra (TOEIC, IELTS, JLPT, DELF, ...),
-        dựa trên dữ liệu truy vấn từ Neo4j.
-        """
         if not data:
             return "Hiện chưa có dữ liệu điều kiện tốt nghiệp trong hệ thống."
 
-        # Nếu dữ liệu là dict thì chuyển thành list để xử lý thống nhất
         if isinstance(data, dict):
             data = [data]
-        # Nếu dữ liệu chỉ là chuỗi (do lỗi hoặc dữ liệu rỗng)
-        elif isinstance(data, str):
-            return f"Không thể phân tích dữ liệu điều kiện tốt nghiệp: {data}"
 
-        formatted = ""
+        # -------- Điều kiện chung --------
+        dieu_kien_chung = None
+        for d in data:
+            if d.get("dieu_kien_chung"):
+                dieu_kien_chung = d["dieu_kien_chung"]
+                break
+
+        # -------- Chuẩn ngoại ngữ theo hệ --------
+        he_map = {}
 
         for d in data:
-            # Bỏ qua nếu không phải dict
-            if not isinstance(d, dict):
+            for item in d.get("ngoai_ngu_list", []):
+                he = item.get("he")
+                lang = item.get("lang_type")
+                info = item.get("thong_tin_ngoai_ngu", {})
+
+                if not he or not info:
+                    continue
+
+                if he not in he_map:
+                    he_map[he] = {}
+
+                if lang not in he_map[he]:
+                    he_map[he][lang] = info
+
+        # -------- Chương trình có điều kiện riêng --------
+        ct_dieu_kien_rieng = []
+
+        for d in data:
+            dk_rieng = d.get("dieu_kien_rieng")
+            if dk_rieng and dk_rieng.lower() != "không có yêu cầu riêng.":
+                ct_dieu_kien_rieng.append({
+                    "ten": d.get("ten_chuong_trinh"),
+                    "dieu_kien_rieng": dk_rieng
+                })
+
+        # -------- FORMAT --------
+        formatted = "🎓 **Điều kiện tốt nghiệp chung tại Đại học Bách Khoa**\n\n"
+
+        formatted += "### 1. Điều kiện chung:\n"
+        formatted += dieu_kien_chung + "\n\n"
+
+        formatted += "### 2. Chuẩn ngoại ngữ đầu ra:\n\n"
+
+        for he in ["Cử nhân", "Kỹ sư"]:
+            if he not in he_map:
                 continue
 
-            ten_ctdt = d.get("ten_chuong_trinh", "Không rõ tên chương trình")
-            dk_chung = d.get("dieu_kien_chung", "Không có thông tin về điều kiện chung.")
-            dk_rieng = d.get("dieu_kien_rieng", "")
-            ngoai_ngu_list = d.get("ngoai_ngu_list") or d.get("thong_tin_ngoai_ngu", [])
+            formatted += f"**Hệ {he}:**\n"
 
-            formatted += f"🎓 **{ten_ctdt}**\n"
-            formatted += f"  • Điều kiện chung: {dk_chung.strip()}\n"
+            for lang_type, info in he_map[he].items():
+                lang_name = (
+                    "Tiếng Anh" if lang_type == "TiengAnh"
+                    else "Tiếng Nhật" if lang_type == "TiengNhat"
+                    else "Tiếng Pháp" if lang_type == "TiengPhap"
+                    else lang_type
+                )
 
-            if dk_rieng and dk_rieng.strip() and dk_rieng.lower() != "không có yêu cầu riêng.":
-                formatted += f"  • Điều kiện riêng: {dk_rieng.strip()}\n"
-
-            # ---- Chuẩn ngoại ngữ đầu ra chi tiết ----
-            if isinstance(ngoai_ngu_list, list) and len(ngoai_ngu_list) > 0:
-                formatted += "  • Chuẩn ngoại ngữ đầu ra:\n"
-                for item in ngoai_ngu_list:
-                    if not isinstance(item, dict):
-                        continue
-
-                    lang_type = item.get("lang_type")
-                    info = item.get("thong_tin_ngoai_ngu", {})
-                    if not info:
-                        continue
-
-                    details = []
-                    for k, v in info.items():
-                        if v and str(v).strip():
-                            details.append(f"{k}: {v}")
-
-                    if details:
-                        lang_name = (
-                            "Tiếng Anh" if lang_type == "TiengAnh"
-                            else "Tiếng Nhật" if lang_type == "TiengNhat"
-                            else "Tiếng Pháp" if lang_type == "TiengPhap"
-                            else lang_type or "Ngôn ngữ khác"
-                        )
-                        formatted += f"     - {lang_name} → " + ", ".join(details) + "\n"
-            else:
-                formatted += "  • Không có thông tin cụ thể về chuẩn ngoại ngữ.\n"
+                formatted += f"- {lang_name}:\n"
+                for k, v in info.items():
+                    if v:
+                        formatted += f"   • {k}: {v}\n"
 
             formatted += "\n"
 
-        # ----------------- PROMPT RÕ RÀNG -----------------
-        prompt = f"""
-        Bạn là trợ lý học vụ của Đại học Bách Khoa.
+        if ct_dieu_kien_rieng:
+            formatted += "### 3. Các chương trình có điều kiện riêng:\n\n"
+            for ct in ct_dieu_kien_rieng:
+                formatted += f"- **{ct['ten']}**: {ct['dieu_kien_rieng']}\n"
 
+            formatted += "\n"
+
+        # -------- PROMPT GPT --------
+        prompt = f"""
         Người dùng hỏi: "{question}"
 
-        Dưới đây là dữ liệu lấy từ Neo4j, gồm thông tin chi tiết về điều kiện tốt nghiệp
-        và chuẩn ngoại ngữ đầu ra (TOEIC, IELTS, JLPT, DELF, v.v.):
+        Dữ liệu điều kiện tốt nghiệp chung:
 
         {formatted}
 
         Yêu cầu:
-        1️⃣ Trả lời rõ ràng, có cấu trúc, dễ hiểu, trả lời đầy đủ không lượt bỏ thông tin của neo4j.
-        2️⃣ Nếu có thông tin chi tiết (TOEIC, IELTS, JLPT...), hãy nêu cụ thể theo từng ngôn ngữ.
-        3️⃣ Nếu một chương trình có nhiều chuẩn ngoại ngữ (VD: Tiếng Anh + Tiếng Nhật), hãy liệt kê tất cả.
-        4️⃣ Không được trả lời mơ hồ kiểu "theo quy định của từng chương trình".
+        - Trình bày đúng cấu trúc học vụ.
+        - Chuẩn ngoại ngữ phải xuống dòng từng chứng chỉ.
+        - Chỉ nêu tên chương trình khi có điều kiện riêng.
+        - Không lặp điều kiện chung.
+        - Văn phong ngắn gọn, rõ ràng.
         """
 
         try:
@@ -108,134 +121,127 @@ class OpenAIHandler:
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "Bạn là trợ lý học vụ thông minh, chuyên trả lời câu hỏi về điều kiện tốt nghiệp. "
-                            "Nếu dữ liệu có TOEIC, IELTS, JLPT, DELF... thì phải nêu rõ ràng, không được bỏ qua."
-                        )
+                        "content": "Bạn là trợ lý học vụ, trả lời điều kiện tốt nghiệp chung chuẩn học thuật."
                     },
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3
+                temperature=0.2
             )
+
             return response.choices[0].message.content.strip()
 
         except Exception as e:
-            return (
-                f"Dưới đây là dữ liệu lấy từ Neo4j (hiển thị đầy đủ, chưa qua GPT):\n\n{formatted}\n\n"
-                f"Lỗi: {str(e)}"
-            )
+            return formatted + f"\n\nLỗi GPT: {str(e)}"
+        
+    #Hàm hỏi về điều kiện tốt nghiệp riêng của 1 chương trình cụ thể?
+    def summarize_graduation_conditions_ctdt(self, data: dict, question: str):
+
+        if not data:
+            return "Xin lỗi, tôi không tìm thấy thông tin điều kiện tốt nghiệp cho chương trình đào tạo này."
+
+        prompt = f"""
+    Bạn là trợ lý học vụ Đại học Bách Khoa.
+
+    Hãy trình bày điều kiện tốt nghiệp của chương trình đào tạo sau theo bố cục:
+
+    1. Điều kiện chung.
+    2. Điều kiện riêng.
+    3. Chuẩn ngoại ngữ đầu ra hệ Cử nhân.
+    4. Chuẩn ngoại ngữ đầu ra hệ Kỹ sư.
+
+    Yêu cầu:
+    - Trình bày rõ ràng, gạch đầu dòng.
+    - Mỗi chứng chỉ xuống dòng riêng.
+    - Nếu phần nào không có thì ghi: Không có yêu cầu riêng.
+
+    Dữ liệu:
+    {data}
+
+    Câu hỏi: {question}
+    """
+
+        response = self.client.chat.completions.create(
+            model=self.model_reasoning,   
+            messages=[
+                {"role": "system", "content": "Bạn là trợ lý học vụ."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+
+        return response.choices[0].message.content.strip()
+
 
     #Hàm toán tắt riêng cho câu hỏi chuẩn ngoại ngữ đầu ra là gì?
     def summarize_language_requirements(self, data, question):
-        """
-        Tóm tắt thông tin chuẩn ngoại ngữ đầu ra của các chương trình đào tạo.
-        """
-        # Ghép dữ liệu text từ kết quả truy vấn Neo4j
-        text = "Dưới đây là dữ liệu chuẩn ngoại ngữ đầu ra được hệ thống thu thập:\n\n"
+
+        cu_nhan = []
+        ky_su = []
+        rieng = {}
+
         for d in data:
-            ten = d.get("ten_chuong_trinh", "Chương trình chưa rõ")
-            text += f"- {ten}:\n"
-            ngoai_ngu_list = d.get("ngoai_ngu_list", [])
-            if not ngoai_ngu_list:
-                text += "  • Không có thông tin ngoại ngữ đầu ra.\n"
-            else:
-                for item in ngoai_ngu_list:
-                    lang_type = item.get("lang_type", "Không rõ")
-                    details = item.get("thong_tin_ngoai_ngu", {})
-                    detail_text = ", ".join(f"{k}: {v}" for k, v in details.items() if v)
-                    text += f"  • {lang_type}: {detail_text or 'Không có thông tin cụ thể'}\n"
+            ten = d.get("ten_chuong_trinh", "")
+
+            # --- CỬ NHÂN CHỈ LẤY TIẾNG ANH ---
+            for x in d.get("chuan_ngoai_ngu_cu_nhan", []):
+                if x["lang_type"] == "TiengAnh":
+                    cu_nhan.append(x)
+
+            # --- KỸ SƯ CHỈ LẤY TIẾNG ANH ---
+            for x in d.get("chuan_ngoai_ngu_ky_su", []):
+                if x["lang_type"] == "TiengAnh":
+                    ky_su.append(x)
+
+            # --- NGOẠI NGỮ RIÊNG ---
+            if "Nhật" in ten:
+                rieng[ten] = [x for x in d.get("chuan_ngoai_ngu_cu_nhan", []) if x["lang_type"] == "TiengNhat"]
+
+            if "PFIEV" in ten or "Pháp" in ten:
+                rieng[ten] = [x for x in d.get("chuan_ngoai_ngu_cu_nhan", []) if x["lang_type"] == "TiengPhap"]
+
+        def build_lang_text(items):
+            t = ""
+            for x in items:
+                details = ", ".join(f"{k}: {v}" for k,v in x["thong_tin_ngoai_ngu"].items() if v)
+                t += f"• {details}\n"
+            return t
+
+        text = "Chuẩn ngoại ngữ đầu ra:\n\n"
+
+        text += "Hệ Cử nhân:\n\nTiếng Anh:\n"
+        text += build_lang_text(cu_nhan)
+
+        text += "\nHệ Kỹ sư:\n\nTiếng Anh:\n"
+        text += build_lang_text(ky_su)
+
+        text += "\nCác chương trình có ngoại ngữ riêng:\n\n"
+        for k,v in rieng.items():
+            text += f"{k}:\n"
+            for x in v:
+                details = ", ".join(f"{k2}: {v2}" for k2,v2 in x["thong_tin_ngoai_ngu"].items() if v2)
+                text += f"• {details}\n"
             text += "\n"
 
-        # Gửi cho GPT tóm tắt lại ngắn gọn, dễ hiểu
         prompt = f"""
-Bạn là một trợ lý học vụ của Đại học Bách Khoa.
+    Bạn chỉ cần trình bày lại đúng nội dung sau theo văn phong học vụ,
+    KHÔNG thêm, KHÔNG suy diễn, KHÔNG gộp.
 
-Người dùng vừa hỏi: "{question}"
+    {text}
+    """
 
-Dưới đây là dữ liệu về chuẩn ngoại ngữ đầu ra của các chương trình đào tạo, lấy trực tiếp từ Neo4j (bao gồm tất cả chứng chỉ, bậc yêu cầu, TOEIC, TOEFL, IELTS, Cambridge, JLPT, TOP_J, NAT_TEST, DELF, TCF, v.v.):
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Bạn là trợ lý học vụ Đại học Bách Khoa."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0
+        )
 
-{text}
+        return response.choices[0].message.content.strip()
+        
 
-Yêu cầu:
-1️⃣ Trả lời rõ ràng, có cấu trúc, dễ hiểu.
-2️⃣ Liệt kê **tất cả các loại chứng chỉ và bậc yêu cầu** theo từng ngôn ngữ (Tiếng Anh, Tiếng Nhật, Tiếng Pháp, v.v.).
-3️⃣ **Không gộp dữ liệu của các chương trình**, giữ nguyên dữ liệu như trong Neo4j.
-4️⃣ Trình bày rõ ràng, dễ đọc.
-"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "Bạn là trợ lý học vụ của Đại học Bách Khoa."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.5
-            )
-            return response.choices[0].message.content.strip()
-
-        except Exception as e:
-            print("❌ Lỗi khi tóm tắt chuẩn ngoại ngữ đầu ra:", e)
-            # fallback nếu GPT không phản hồi
-            return "Hiện tại hệ thống chưa thể tóm tắt chuẩn ngoại ngữ đầu ra, vui lòng thử lại sau."
-    
-    def summarize_language_requirements_ctdt(self, data, question):
-        """
-        Tóm tắt chuẩn ngoại ngữ đầu ra cho MỘT chương trình đào tạo cụ thể.
-        Giữ nguyên chi tiết từ Neo4j, chỉ yêu cầu GPT trình bày rõ ràng.
-        """
-        if not data:
-            return "Hiện chưa có dữ liệu về chuẩn ngoại ngữ đầu ra trong hệ thống."
-
-        d = data if isinstance(data, dict) else data[0]
-        ten = d.get("ten_chuong_trinh", "Chương trình chưa rõ")
-        ngoai_ngu_list = d.get("thong_tin_ngoai_ngu", [])
-
-        # ✅ Format dữ liệu từ Neo4j để GPT hiểu đúng
-        text = f"Chương trình đào tạo: {ten}\n\n"
-        if not ngoai_ngu_list:
-            text += "Không có thông tin cụ thể về chuẩn ngoại ngữ đầu ra."
-        else:
-            text += "Dữ liệu chuẩn ngoại ngữ đầu ra thu được từ Neo4j:\n"
-            for item in ngoai_ngu_list:
-                lang_type = item.get("lang_type", "Không rõ")
-                details = item.get("thong_tin_ngoai_ngu", {})
-                detail_text = ", ".join(f"{k}: {v}" for k, v in details.items() if v)
-                text += f"• {lang_type}: {detail_text or 'Không có thông tin cụ thể'}\n"
-
-        # 🧠 Prompt rõ ràng, không cho GPT "bịa"
-        prompt = f"""
-Bạn là trợ lý học vụ của Đại học Bách Khoa.
-
-Người dùng vừa hỏi: "{question}"
-
-Dưới đây là dữ liệu chuẩn ngoại ngữ đầu ra (lấy trực tiếp từ Neo4j):
-
-{text}
-
-Yêu cầu:
-1️⃣ Trả lời **chính xác theo dữ liệu trên**, không tự suy diễn hay giả định.
-2️⃣ Giữ nguyên mọi thông tin chứng chỉ, bậc yêu cầu (TOEIC, IELTS, JLPT...).
-3️⃣ Trình bày đẹp, dễ đọc, rõ ràng theo từng ngôn ngữ.
-4️⃣ Nếu không có dữ liệu, nói rõ "Chưa có thông tin trong hệ thống."
-"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "Bạn là trợ lý học vụ, chỉ trình bày lại dữ liệu từ Neo4j, không suy diễn."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1
-            )
-            return response.choices[0].message.content.strip()
-
-        except Exception as e:
-            print("❌ Lỗi khi tóm tắt chuẩn ngoại ngữ đầu ra CTĐT:", e)
-            # fallback hiển thị dữ liệu thô
-            return text
-
+#
 
     def summarize_language_score_requirement_properties(self, data, question: str):
         """
