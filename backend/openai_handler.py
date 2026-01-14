@@ -241,14 +241,98 @@ class OpenAIHandler:
         return response.choices[0].message.content.strip()
         
 
-#
+    #àm toán tắt riêng cho câu hỏi chuẩn ngoại ngữ đầu ra của 1 học phần cụ thể là gì?
+    def summarize_language_requirements_ctdt(self, data, question):
+
+        if not data or not data.get("ten_chuong_trinh"):
+            return "Hiện tại tôi chưa tìm thấy thông tin chuẩn ngoại ngữ đầu ra cho chương trình đào tạo bạn hỏi."
+
+        ten = data.get("ten_chuong_trinh", "")
+        cu_nhan = data.get("chuan_ngoai_ngu_cu_nhan", [])
+        ky_su = data.get("chuan_ngoai_ngu_ky_su", [])
+
+        cu_nhan_anh = [x for x in cu_nhan if x["lang_type"] == "TiengAnh"]
+        ky_su_anh = [x for x in ky_su if x["lang_type"] == "TiengAnh"]
+
+        rieng = []
+
+        if "Nhật" in ten:
+            rieng = [x for x in cu_nhan if x["lang_type"] == "TiengNhat"]
+
+        if "PFIEV" in ten or "Pháp" in ten:
+            rieng = [x for x in cu_nhan if x["lang_type"] == "TiengPhap"]
+
+        def build_lang_text(items):
+            t = ""
+            for x in items:
+                details = ", ".join(
+                    f"{k}: {v}" for k, v in x["thong_tin_ngoai_ngu"].items() if v
+                )
+                t += f"• {details}\n"
+            return t
+
+        text = f"Chuẩn ngoại ngữ đầu ra của chương trình {ten}:\n\n"
+
+        text += "Hệ Cử nhân:\n\nTiếng Anh:\n"
+        text += build_lang_text(cu_nhan_anh) if cu_nhan_anh else "• Chưa có dữ liệu\n"
+
+        text += "\nHệ Kỹ sư:\n\nTiếng Anh:\n"
+        text += build_lang_text(ky_su_anh) if ky_su_anh else "• Chưa có dữ liệu\n"
+
+        if rieng:
+            text += "\nNgoại ngữ riêng của chương trình:\n"
+            for x in rieng:
+                details = ", ".join(
+                    f"{k}: {v}" for k, v in x["thong_tin_ngoai_ngu"].items() if v
+                )
+                text += f"• {details}\n"
+
+        prompt = f"""
+        Bạn là trợ lý học vụ đại học.
+
+        Nhiệm vụ:
+        Trình bày lại nội dung sau theo văn phong học vụ, rõ ràng, mạch lạc, dễ đọc.
+
+        QUY TẮC BẮT BUỘC:
+        - KHÔNG thêm thông tin
+        - KHÔNG suy diễn
+        - KHÔNG gộp dữ liệu giữa các hệ
+        - KHÔNG thay đổi giá trị
+        - KHÔNG nhận xét
+        - KHÔNG giải thích
+        - KHÔNG dùng emoji
+        - Giữ nguyên đầy đủ nội dung
+
+        CÁCH TRÌNH BÀY:
+        - Tiêu đề in đậm
+        - Mỗi hệ đào tạo xuống dòng riêng
+        - Mỗi ngoại ngữ có tiêu đề riêng
+        - Các tiêu chí trình bày dạng gạch đầu dòng
+        - Nếu không có dữ liệu, ghi đúng: "Chưa có dữ liệu"
+
+        Nội dung gốc cần trình bày lại:
+
+        {text}
+
+        Chỉ trả về nội dung đã trình bày, không kèm giải thích.
+    """
+
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Bạn là trợ lý học vụ Đại học Bách Khoa."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0
+        )
+
+        return response.choices[0].message.content.strip()
 
     def summarize_language_score_requirement_properties(self, data, question: str):
         """
         Xử lý tất cả chứng chỉ ngoại ngữ cho câu hỏi dạng:
         - TOEIC/IELTS/Cambridge/TOEFL_iBT/TOEFL_ITP/JLPT/NAT_TEST/TOP_J/DELF_va_DALF/TCF
         """
-        # chuẩn hóa tên chứng chỉ từ question
         cert_keywords = [
             "toeic","ielts","toefl","cambridge","chung_chi",
             "jlpt","nat_test","top_j","delf","tcf"
@@ -258,24 +342,50 @@ class OpenAIHandler:
                 requested_cert = cert
                 break
         else:
-            requested_cert = None  # nếu không tìm thấy, gửi tất cả
+            requested_cert = None
 
         prompt = f"""
     Bạn là trợ lý học vụ Đại học Bách Khoa.
-    Dữ liệu chuẩn đầu ra ngoại ngữ từ Neo4j:
+
+    Dữ liệu chuẩn đầu ra ngoại ngữ từ hệ thống:
     {data}
 
-    Câu hỏi: "{question}"
+    Câu hỏi:
+    "{question}"
 
     Yêu cầu:
-    - Nếu requested_cert không rỗng, chỉ trả kết quả mức điểm/chứng chỉ của chứng chỉ đó, tổng hợp nếu nhiều CTĐT.
-    - Nếu có CTĐT trong câu hỏi, trả mức chứng chỉ của CTĐT đó.
-    - Nếu không có CTĐT, trả kết quả tổng hợp chung.
-    - Không tự bịa thông tin, chỉ dựa trên dữ liệu.
-    - Trình bày gọn gàng, rõ ràng.
+
+    1. Chỉ sử dụng dữ liệu đã cho, KHÔNG suy diễn, KHÔNG bổ sung thông tin ngoài dữ liệu.
+
+    2. Câu hỏi đang hỏi về mức điểm chứng chỉ để tốt nghiệp, vì vậy cần tổng hợp theo:
+    - Hệ đào tạo (Cử nhân / Kỹ sư).
+
+    3. Nếu nhiều chương trình có cùng mức điểm trong cùng một hệ, hãy gộp thành một mức chung, KHÔNG liệt kê từng chương trình.
+
+    4. Chỉ liệt kê riêng từng chương trình đào tạo nếu:
+    - Mức điểm của chương trình đó khác với phần còn lại trong cùng hệ.
+
+    5. Trình bày bằng văn phong học vụ, tự nhiên, mạch lạc, phù hợp để trả lời sinh viên.
+    Không trình bày dạng bảng kỹ thuật.
+
+    6. Cấu trúc trình bày bắt buộc theo dạng:
+
+    Chuẩn ngoại ngữ đầu ra:
+
+    Đối với hệ Cử nhân, sinh viên cần đạt:
+    - TOEIC: ...
+
+    Đối với hệ Kỹ sư, sinh viên cần đạt:
+    - TOEIC: ...
+
+    (Nếu có chương trình đặc thù, trình bày thêm mục riêng bên dưới)
+
+    7. Không nhắc lại dữ liệu thô, không giải thích quy trình xử lý.
+
+    Chỉ trả về phần câu trả lời dành cho sinh viên.
+
     """
 
-        # Gọi LLM
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],

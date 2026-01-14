@@ -1,21 +1,35 @@
 # backend/neo4j_handler.py
 from neo4j import GraphDatabase
-from backend.config import NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
+from backend.config import NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, client
+from backend.openai_handler import OpenAIHandler
 import logging
+import json
 import re
 
 logger = logging.getLogger(__name__)
 
+     
 class Neo4jHandler:
-    def __init__(self):
+    def run_query(self, query, params=None):
+            with self.driver.session() as session:
+                result = session.run(query, params or {})
+                return [r.data() for r in result]
+            
+    def __init__(self, openai_handler: OpenAIHandler = None):
         try:
             self.driver = GraphDatabase.driver(
                 NEO4J_URI,
                 auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
             )
+
             with self.driver.session() as session:
                 session.run("RETURN 1")
+
+            self.openai_handler = openai_handler
+            self.llm_client = openai_handler.client if openai_handler else None
+
             logger.info("✅ Kết nối Neo4j thành công!")
+
         except Exception as e:
             logger.error(f"❌ Lỗi khi kết nối Neo4j: {e}")
             raise e
@@ -24,72 +38,154 @@ class Neo4jHandler:
         if hasattr(self, "driver") and self.driver:
             self.driver.close()
             logger.info("🔒 Đã đóng kết nối Neo4j.")
+
     
-    def extract_ctdt_name(self, question: str):
-        """
-        Trích xuất tên chương trình đào tạo từ câu hỏi bằng cách:
-        - làm sạch câu hỏi
-        - loại bỏ stopwords
-        - chạy BM25 để match gần đúng tên CTĐT
-        """
 
-        stopwords = [
-            "chương trình", "ctdt", "ctđt", "ngành",
-            "là gì", "giới thiệu", "thuộc khoa nào",
-            "học gì", "gồm những gì", "bao gồm",
-            "nội dung", "cho mình hỏi", "tư vấn"
-        ]
+    # def extract_ctdt_name(self, question: str):
+    #     """
+    #     Trích xuất tên chương trình đào tạo từ câu hỏi bằng cách:
+    #     - làm sạch câu hỏi
+    #     - loại bỏ stopwords
+    #     - chạy BM25 để match gần đúng tên CTĐT
+    #     """
 
-        clean = question.lower()
-        for sw in stopwords:
-            clean = clean.replace(sw, "")
+    #     stopwords = [
+    #         "chương trình", "ctdt", "ctđt", "ngành",
+    #         "là gì", "giới thiệu", "thuộc khoa nào",
+    #         "học gì", "gồm những gì", "bao gồm",
+    #         "nội dung", "cho mình hỏi", "tư vấn"
+    #     ]
 
-        clean = clean.strip()
+    #     clean = question.lower()
+    #     for sw in stopwords:
+    #         clean = clean.replace(sw, "")
 
-        # fallback — nếu rỗng thì dùng nguyên câu
-        if not clean:
-            clean = question
+    #     clean = clean.strip()
 
-        # chạy BM25 để lấy tên CTĐT khớp nhất
-        query = """
-        CALL db.index.fulltext.queryNodes(
-            'ChuongTrinhDaoTao_full_text',
-            $q
-        ) YIELD node, score
-        RETURN node.ten_chuong_trinh AS ten, score
-        ORDER BY score DESC
-        LIMIT 1
-        """
+    #     # fallback — nếu rỗng thì dùng nguyên câu
+    #     if not clean:
+    #         clean = question
 
-        with self.driver.session() as sess:
-            result = sess.run(query, {"q": clean}).single()
+    #     # chạy BM25 để lấy tên CTĐT khớp nhất
+    #     query = """
+    #     CALL db.index.fulltext.queryNodes(
+    #         'ChuongTrinhDaoTao_full_text',
+    #         $q
+    #     ) YIELD node, score
+    #     RETURN node.ten_chuong_trinh AS ten, score
+    #     ORDER BY score DESC
+    #     LIMIT 1
+    #     """
 
-        if result:
-            return result["ten"]
+    #     with self.driver.session() as sess:
+    #         result = sess.run(query, {"q": clean}).single()
 
-        return None
-    # ==========================
-    # BM25 Fulltext Search
-    # ==========================
+    #     if result:
+    #         return result["ten"]
+
+    #     return None
+    # # ==========================
+    # # BM25 Fulltext Search
+    # # ==========================
     
-    def bm25_search(self, query, limit=5):
-        """
-        Tìm kiếm toàn văn bằng BM25 (Fulltext Search).
-        """
-        cypher = """
-        CALL db.index.fulltext.queryNodes('ChuongTrinhDaoTao_full_text', $query)
-        YIELD node, score
-        RETURN node.ten_chuong_trinh AS ten_chuong_trinh,
-               node.noi_dung AS noi_dung,
-               score
-        ORDER BY score DESC
-        LIMIT $limit
-        """
-        with self.driver.session() as session:
-            result = session.run(cypher, {"query": query, "limit": limit})
-            records = [r.data() for r in result]
-        logger.info(f"🔍 BM25 Search trả về {len(records)} kết quả cho truy vấn: '{query}'")
-        return records
+    # def bm25_search(self, query, limit=5):
+    #     """
+    #     Tìm kiếm toàn văn bằng BM25 (Fulltext Search).
+    #     """
+    #     cypher = """
+    #     CALL db.index.fulltext.queryNodes('ChuongTrinhDaoTao_full_text', $query)
+    #     YIELD node, score
+    #     RETURN node.ten_chuong_trinh AS ten_chuong_trinh,
+    #            node.noi_dung AS noi_dung,
+    #            score
+    #     ORDER BY score DESC
+    #     LIMIT $limit
+    #     """
+    #     with self.driver.session() as session:
+    #         result = session.run(cypher, {"query": query, "limit": limit})
+    #         records = [r.data() for r in result]
+    #     logger.info(f"🔍 BM25 Search trả về {len(records)} kết quả cho truy vấn: '{query}'")
+    #    return records
+    def extract_entities_from_question(self, question: str):
+
+        program_name = None
+        course_name = None
+        semester_name = None
+
+        try:
+            # 1️⃣ Lấy danh sách entity từ Neo4j
+            cypher = """
+            MATCH (c:HocPhanTienQuyet) RETURN c.ten_mon AS name
+            UNION
+            MATCH (c:HocPhanDaiCuong) RETURN c.ten_mon AS name
+            UNION
+            MATCH (c:HocPhanKeTiep) RETURN c.ten_mon AS name
+            UNION
+            MATCH (c:HocPhanSongHanh) RETURN c.ten_mon AS name
+            UNION
+            MATCH (p:ChuongTrinhDaoTao) RETURN p.ten_chuong_trinh AS name
+            UNION
+            MATCH (s:HocKy) RETURN s.ten_hoc_ky AS name
+            """
+
+            result = self.run_query(cypher)
+            entity_list = [r["name"] for r in result if r["name"]]
+
+            print("🟢 Entity list from Neo4j:", entity_list[:20], "...")
+
+            # 2️⃣ Kiểm tra LLM client
+            if not self.llm_client:
+                raise Exception("LLM client chưa được khởi tạo")
+
+            # 3️⃣ Prompt cho LLM
+            prompt = f"""
+    Bạn là hệ thống trích xuất thực thể.
+
+    Danh sách thực thể:
+    {entity_list}
+
+    Câu hỏi:
+    "{question}"
+
+    Trả về JSON đúng định dạng, KHÔNG markdown:
+
+    {{
+    "program_name": "... hoặc null",
+    "course_name": "... hoặc null",
+    "semester_name": "... hoặc null"
+    }}
+    """
+
+            response = self.llm_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
+
+            raw = response.choices[0].message.content.strip()
+            print("🔍 RAW LLM OUTPUT:", raw)
+
+            # 4️⃣ Làm sạch markdown nếu có
+            if raw.startswith("```"):
+                raw = raw.replace("```json", "").replace("```", "").strip()
+
+            data = json.loads(raw)
+
+            program_name = data.get("program_name")
+            course_name = data.get("course_name")
+            semester_name = data.get("semester_name")
+
+            print("🟡 Extracted:")
+            print("   program_name:", program_name)
+            print("   course_name:", course_name)
+            print("   semester_name:", semester_name)
+
+        except Exception as e:
+            print("❌ Lỗi tách entity:", e)
+
+        return program_name, course_name, semester_name
+
+
 
     # ==========================
     # Lấy điều kiện tốt nghiệp chung
@@ -301,36 +397,34 @@ class Neo4jHandler:
     # Lấy chuẩn ngoại ngữ đầu ra của 1 chương trình đào tạo cụ thể
     # ==========================
 
-    def get_chuan_ngoai_ngu_dau_ra_cua_ctdt(self, question_transformed: str):
-        """ 
-        Lấy thông tin chuẩn ngoại ngữ đầu ra cho 1 chương trình đào tạo cụ thể.
-        Truyền question_transformed từ ChatbotLogic, đã qua transform_question.
-        """
-        # 1️⃣ BM25 search: tìm tên CTĐT khớp với câu hỏi
-        bm25_results = self.bm25_search(question_transformed, limit=1)
-        if not bm25_results:
-            logger.warning(f"⚠️ Không tìm thấy CTĐT cho truy vấn: {question_transformed}")
+    def get_chuan_ngoai_ngu_dau_ra_cua_ctdt(self, question: str):
+
+        program_name, course_name, semester_name = self.extract_entities_from_question(question)
+        if not program_name:
+            logger.warning(" Không tách được program_name từ câu hỏi")
             return {
-                "ten_chuong_trinh": question_transformed,
-                "thong_tin_ngoai_ngu": [],
+                "ten_chuong_trinh": None,
+                "chuan_ngoai_ngu_cu_nhan": [],
+                "chuan_ngoai_ngu_ky_su": [],
                 "score": 0.0
             }
 
-        ten_ctdt = bm25_results[0]["ten_chuong_trinh"]
+        # 2️⃣ Neo4j fulltext query dùng program_name
 
-        # 2️⃣ Truy vấn chi tiết node bằng fulltext + thu thập ngoại ngữ
-        cypher = """
-        CALL db.index.fulltext.queryNodes('ChuongTrinhDaoTao_full_text', $ten_ctdt)
+        cypher = f"""
+        CALL db.index.fulltext.queryNodes('ChuongTrinhDaoTao_full_text', '{program_name}')
         YIELD node AS ctdt, score
-        WHERE toLower(ctdt.ten_chuong_trinh) CONTAINS toLower($ten_ctdt)
-        OPTIONAL MATCH (ctdt)-[:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
-        WHERE lang IS NOT NULL
+        WHERE toLower(ctdt.ten_chuong_trinh) CONTAINS toLower('{program_name}')
+
+        OPTIONAL MATCH (ctdt)-[rel:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
+
         WITH 
             ctdt, score,
-            collect({
-                lang_type: labels(lang)[0],
-                thong_tin_ngoai_ngu: CASE labels(lang)[0]
-                    WHEN 'TiengAnh' THEN {
+            collect({{
+                he: rel.he,
+                lang_type: HEAD(labels(lang)),
+                thong_tin_ngoai_ngu: CASE HEAD(labels(lang))
+                    WHEN 'TiengAnh' THEN {{
                         bac: lang.bac,
                         Cambridge: lang.Cambridge,
                         chung_chi: lang.chung_chi,
@@ -338,49 +432,64 @@ class Neo4jHandler:
                         TOEFL_iBT: lang.TOEFL_iBT,
                         TOEFL_ITP: lang.TOEFL_ITP,
                         TOEIC: lang.TOEIC
-                    }
-                    WHEN 'TiengNhat' THEN {
+                    }}
+                    WHEN 'TiengNhat' THEN {{
                         bac: lang.bac,
                         chung_chi: lang.chung_chi,
                         JLPT: lang.JLPT,
                         NAT_TEST: lang.NAT_TEST,
                         TOP_J: lang.TOP_J
-                    }
-                    WHEN 'TiengPhap' THEN {
+                    }}
+                    WHEN 'TiengPhap' THEN {{
                         bac: lang.bac,
                         chung_chi: lang.chung_chi,
                         DELF_va_DALF: lang.DELF_va_DALF,
                         TCF: lang.TCF
-                    }
-                    ELSE null
+                    }}
+                    ELSE NULL
                 END
-            }) AS ngoai_ngu_list
-        RETURN 
+            }}) AS ngoai_ngu_list
+
+        RETURN
             ctdt.ten_chuong_trinh AS ten_chuong_trinh,
-            [x IN ngoai_ngu_list WHERE x.lang_type IS NOT NULL] AS thong_tin_ngoai_ngu,
+
+            [x IN ngoai_ngu_list 
+                WHERE x.he = "Cử nhân" AND x.lang_type IS NOT NULL] 
+                AS chuan_ngoai_ngu_cu_nhan,
+
+            [x IN ngoai_ngu_list 
+                WHERE x.he = "Kỹ sư" AND x.lang_type IS NOT NULL] 
+                AS chuan_ngoai_ngu_ky_su,
+
             score
         ORDER BY score DESC
-        LIMIT 1;
+        LIMIT 1
         """
 
         with self.driver.session() as session:
-            record = session.run(cypher, {"ten_ctdt": ten_ctdt}).single()
+            record = session.run(cypher).single()
+
 
         if not record:
-            logger.warning(f"⚠️ Không tìm thấy chi tiết CTĐT: {ten_ctdt}")
             return {
-                "ten_chuong_trinh": ten_ctdt,
-                "thong_tin_ngoai_ngu": [],
+                "ten_chuong_trinh": program_name,
+                "chuan_ngoai_ngu_cu_nhan": [],
+                "chuan_ngoai_ngu_ky_su": [],
                 "score": 0.0
             }
 
         data = {
             "ten_chuong_trinh": record["ten_chuong_trinh"],
-            "thong_tin_ngoai_ngu": record["thong_tin_ngoai_ngu"],
-            "score": float(record["score"]) if record["score"] is not None else 0.0
+            "chuan_ngoai_ngu_cu_nhan": record["chuan_ngoai_ngu_cu_nhan"],
+            "chuan_ngoai_ngu_ky_su": record["chuan_ngoai_ngu_ky_su"],
+            "score": float(record["score"]) if record["score"] else 0.0
         }
-        logger.info(f"🌐 Lấy chuẩn ngoại ngữ đầu ra cho CTĐT: {data['ten_chuong_trinh']} (score={data['score']})")
+
+        print("🟢 FINAL DATA:", data)
+
         return data
+
+
      # ==========================
     # Lấy hỏi toiec bao nhiều thì tốt nghiệp (chung + chương trình đào tạo cụ thể)
     # ==========================
@@ -410,16 +519,19 @@ class Neo4jHandler:
         cypher = """
         CALL db.index.fulltext.queryNodes('NgoaiNgu_fulltext', $query)
         YIELD node AS lang, score
+
         OPTIONAL MATCH (ctdt:ChuongTrinhDaoTao)
-            -[:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
-        WITH lang, ctdt, score,
+            -[rel:CO_CHUAN_NGOAI_NGU_DAU_RA_LA|CO_CHUAN_NGOAI_NGU_DAU_RA_TOI_THIEU_LA]->(lang)
+
+        WITH lang, ctdt, rel, score,
             HEAD(labels(lang)) AS lang_type,
-            ctdt.ten_chuong_trinh AS thuoc_chuong_trinh
+            ctdt.ten_chuong_trinh AS thuoc_chuong_trinh,
+            rel.he AS he
         WHERE thuoc_chuong_trinh IS NOT NULL
 
-        WITH thuoc_chuong_trinh, score, lang_type, COLLECT(lang) AS langs
+        WITH thuoc_chuong_trinh, he, score, lang_type, COLLECT(lang) AS langs
 
-        WITH thuoc_chuong_trinh, score, lang_type,
+        WITH thuoc_chuong_trinh, he, score, lang_type,
             CASE lang_type
                 WHEN 'TiengAnh' THEN {
                     bac: [l IN langs | l.bac],
@@ -446,8 +558,14 @@ class Neo4jHandler:
                 ELSE NULL
             END AS thong_tin
 
-        RETURN thuoc_chuong_trinh, score, lang_type, thong_tin
+        RETURN 
+            thuoc_chuong_trinh,
+            he,
+            score,
+            lang_type,
+            thong_tin
         ORDER BY score DESC;
+
         """
 
         with self.driver.session() as session:

@@ -3,11 +3,14 @@ from backend.neo4j_handle import Neo4jHandler
 from backend.openai_handler import OpenAIHandler
 from backend.intent_detector import IntentDetector
 
+openai_handler = OpenAIHandler()
+neo4j_handler = Neo4jHandler(openai_handler)
+
 
 class ChatbotLogic:
     def __init__(self):
-        self.neo4j_handle = Neo4jHandler()
-        self.openai_handler = OpenAIHandler()
+        self.neo4j_handle = neo4j_handler
+        self.openai_handler =openai_handler
         self.intent_detector = IntentDetector()
         
     def handle_user_query(self, question):

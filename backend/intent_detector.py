@@ -32,24 +32,34 @@ class IntentDetector:
         # RULE BASED ƯU TIÊN
         # ======================
 
-        if "điều kiện tốt nghiệp" in q and "chuẩn" not in q:
-            return "hoi_dieu_kien_tot_nghiep_chung"
+        if any(k in q for k in [
+            "khung năng lực",
+            "khung 6 bậc",
+            "ngoại ngữ gồm mấy bậc",
+            "các bậc ngoại ngữ",
+            "khung năng lực tiếng anh"
+        ]):
+            return "hoi_khung_nang_luc_ngoai_ngu"
 
+        # Mức điểm chứng chỉ
+        if any(k in q for k in ["bao nhiêu", "mức", "điểm"]) and any(
+            k in q for k in ["ielts", "toeic", "toefl", "jlpt", "nat", "top j"]
+        ):
+            return "hoi_chuan_ngoai_ngu_muc_diem"
+
+        # Điều kiện tốt nghiệp
         if "điều kiện tốt nghiệp" in q and "của" in q:
             return "hoi_dieu_kien_tot_nghiep_ctdt"
 
-        if "chuẩn ngoại ngữ đầu ra" in q and "của" not in q:
-            return "hoi_chuan_ngoai_ngu_dau_ra_chung"
+        if "điều kiện tốt nghiệp" in q:
+            return "hoi_dieu_kien_tot_nghiep_chung"
 
-        if "chuẩn ngoại ngữ đầu ra" in q and "của" in q:
+        #  Chuẩn ngoại ngữ
+        if "chuẩn ngoại ngữ" in q and "của" in q:
             return "chuan_ngoai_ngu_ctdt"
 
-        if any(x in q for x in ["ielts", "toeic", "toefl", "jlpt", "bao nhiêu", "mức điểm"]):
-            return "hoi_chuan_ngoai_ngu_muc_diem"
-
-        if any(x in q for x in ["khung", "6 bậc", "năng lực"]):
-            return "hoi_khung_nang_luc_ngoai_ngu"
-
+        if "chuẩn ngoại ngữ" in q:
+            return "hoi_chuan_ngoai_ngu_dau_ra_chung"
         # ======================
         # GPT fallback
         # ======================
@@ -57,16 +67,36 @@ class IntentDetector:
         prompt = f"""
     Phân loại intent câu hỏi học vụ vào 1 trong các intent sau:
 
-    hoi_dieu_kien_tot_nghiep_chung
-    hoi_dieu_kien_tot_nghiep_ctdt
-    hoi_chuan_ngoai_ngu_dau_ra_chung
-    chuan_ngoai_ngu_ctdt
-    hoi_chuan_ngoai_ngu_muc_diem
-    hoi_khung_nang_luc_ngoai_ngu
-    hoi_thong_tin_ctdt
-    hoi_danh_sach_ctdt
-    hoi_tien_quyet_hoc_phan_ctdt
-    hoi_hoc_phan_song_hanh_ctdt
+    1 hoi_chuan_ngoai_ngu_dau_ra_chung → hỏi về chuẩn ngoại ngữ đầu ra của trường, ví dụ:
+        - "Chuẩn ngoại ngữ đầu ra là gì?"
+        - "Ra trường cần đạt chứng chỉ tiếng Anh nào?"
+    2 chuan_ngoai_ngu_ctdt → hỏi về chuẩn ngoại ngữ đầu ra của một chương trình đào tạo cụ thể, ví dụ: 
+        - "Chuẩn ngoại ngữ đầu ra của Công nghệ thông tin Nhật là gì?" 
+    3 hoi_chuan_ngoai_ngu_muc_diem → Áp dụng cho các câu hỏi có từ khóa như: 
+        - "IELTS bao nhiêu thì tốt nghiệp" 
+        - "TOEIC bao nhiêu thì ra trường" 
+        - "Cần đạt JLPT cấp mấy để tốt nghiệp" 
+        - Có số điểm hoặc từ 'bao nhiêu', 'mức điểm', 'điểm bao nhiêu' 
+    4 hoi_khung_nang_luc_ngoai_ngu → Các câu hỏi chứa các từ khóa như: 
+        - "khung năng lực ngoại ngữ" 
+        - "khung năng lực tiếng anh" 
+        - "khung 6 bậc" 
+        - "ngoại ngữ gồm mấy bậc" 
+        - "các bậc ngoại ngữ" 
+    5 hoi_thong_tin_ctdt
+     Khi chọn **hoi_thong_tin_ctdt**: 
+    - Câu hỏi chứa tên một *chương trình đào tạo* + có mục đích: 
+        • hỏi thông tin CTĐT 
+        • hỏi số tín chỉ 
+        • hỏi CTĐT thuộc khoa nào 
+        • hỏi danh sách học phần 
+        • hỏi học phần theo học kỳ 
+        • hỏi danh sách học phần đồ án
+        • hỏi học phần theo loại: đại cương / tiên quyết / song hành / tự do / đồ án
+        
+    6 hoi_danh_sach_ctdt
+    7 hoi_tien_quyet_hoc_phan_ctdt
+    8 hoi_hoc_phan_song_hanh_ctdt
 
     Chỉ trả về đúng mã intent.
 
@@ -104,9 +134,6 @@ class IntentDetector:
         for old, new in replacements.items():
             q = q.replace(old, new)
 
-        # KHÔNG đổi câu hỏi chuẩn ngoại ngữ đầu ra
-        if "chuẩn ngoại ngữ đầu ra" in q:
-            return "chuẩn ngoại ngữ đầu ra là gì"
-
         return q
+
 
