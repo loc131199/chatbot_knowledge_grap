@@ -4,6 +4,8 @@ from backend.config import client
 import json
 from collections import OrderedDict
 
+
+
 class OpenAIHandler:
     def __init__(self):
         self.client = client  # gán client từ config
@@ -26,6 +28,13 @@ class OpenAIHandler:
 
         if isinstance(data, dict):
             data = [data]
+
+        # -------- Quyết định --------
+        quyet_dinh = None
+        for d in data:
+            if d.get("Quyet_dinh"):
+                quyet_dinh = d["Quyet_dinh"]
+                break
 
         # -------- Điều kiện chung --------
         dieu_kien_chung = None
@@ -65,6 +74,9 @@ class OpenAIHandler:
 
         # -------- FORMAT --------
         formatted = "🎓 **Điều kiện tốt nghiệp chung tại Đại học Bách Khoa**\n\n"
+
+        if quyet_dinh:
+            formatted += f"**Căn cứ theo:** {quyet_dinh}\n\n"
 
         formatted += "### 1. Điều kiện chung:\n"
         formatted += dieu_kien_chung + "\n\n"
@@ -108,6 +120,7 @@ class OpenAIHandler:
         {formatted}
 
         Yêu cầu:
+        - Giữ nguyên thông tin quyết định.
         - Trình bày đúng cấu trúc học vụ.
         - Chuẩn ngoại ngữ phải xuống dòng từng chứng chỉ.
         - Chỉ nêu tên chương trình khi có điều kiện riêng.
@@ -132,6 +145,7 @@ class OpenAIHandler:
 
         except Exception as e:
             return formatted + f"\n\nLỗi GPT: {str(e)}"
+
         
     #Hàm hỏi về điều kiện tốt nghiệp riêng của 1 chương trình cụ thể?
     def summarize_graduation_conditions_ctdt(self, data: dict, question: str):
@@ -142,22 +156,33 @@ class OpenAIHandler:
         prompt = f"""
     Bạn là trợ lý học vụ Đại học Bách Khoa.
 
-    Hãy trình bày điều kiện tốt nghiệp của chương trình đào tạo sau theo bố cục:
+    Hãy trình bày điều kiện tốt nghiệp của chương trình đào tạo theo văn phong học vụ, đúng dữ liệu đã cho.
+
+    Bố cục bắt buộc:
+
+    📌 Quyết định áp dụng:
+    - Trích dẫn đầy đủ số quyết định và ngày ban hành (nếu có).
 
     1. Điều kiện chung.
     2. Điều kiện riêng.
     3. Chuẩn ngoại ngữ đầu ra hệ Cử nhân.
     4. Chuẩn ngoại ngữ đầu ra hệ Kỹ sư.
 
-    Yêu cầu:
-    - Trình bày rõ ràng, gạch đầu dòng.
-    - Mỗi chứng chỉ xuống dòng riêng.
-    - Nếu phần nào không có thì ghi: Không có yêu cầu riêng.
+    Quy tắc trình bày:
+    - Chỉ sử dụng dữ liệu đã cho, KHÔNG suy diễn.
+    - Mỗi chứng chỉ ngoại ngữ xuống dòng riêng.
+    - Nếu một mục không có dữ liệu thì ghi đúng: "Không có yêu cầu riêng."
+    - Văn phong học vụ, ngắn gọn, rõ ràng.
+    - Không lặp lại dữ liệu.
+    - Không thêm thông tin ngoài dữ liệu.
 
     Dữ liệu:
     {data}
 
-    Câu hỏi: {question}
+    Câu hỏi:
+    {question}
+
+    Chỉ trả về nội dung câu trả lời cho sinh viên.
     """
 
         response = self.client.chat.completions.create(
@@ -430,137 +455,181 @@ class OpenAIHandler:
         return response.choices[0].message.content.strip()
 
     def get_course(self, data: list, question: str):
-        """
-        Format dữ liệu CTĐT đã xử lý từ Neo4j (list[dict]).
-        - data: list[dict] từ Neo4j
-        - question: câu hỏi người dùng
-        """
 
-        
-        # đảm bảo data là JSON string
         try:
             data_json = json.dumps(data, ensure_ascii=False, indent=2)
         except Exception:
             data_json = str(data)
 
         prompt = f"""
-    Bạn là trợ lý AI chuyên trả lời câu hỏi về **chương trình đào tạo** dựa trên dữ liệu từ Neo4j.
+        Bạn là trợ lý AI tư vấn chương trình đào tạo cho sinh viên.
 
-      **Bạn KHÔNG được bịa dữ liệu.**  
-      **Chỉ dùng đúng dữ liệu cung cấp trong JSON dưới đây.**
+        Bạn chỉ được sử dụng dữ liệu trong JSON dưới đây, tuyệt đối không được suy đoán hay bịa thông tin.
 
-    Dữ liệu CTĐT từ Neo4j:
-    {data_json}
+        ========================
+        DỮ LIỆU NEO4J
+        ========================
+        {data_json}
 
-    Câu hỏi người dùng: "{question}"
+        ========================
+        CÂU HỎI NGƯỜI DÙNG
+        ========================
+        "{question}"
 
-    ==================================================
-    🎯 **QUY TẮC TRẢ LỜI**
-    ==================================================
-    Luôn trả lời NGẮN GỌN – CHÍNH XÁC – KHÔNG LAN MAN.
+        ========================
+        CÁCH TRẢ LỜI
+        ========================
 
-    Nếu câu hỏi yêu cầu thông tin chi tiết → trả lời đầy đủ.  
-    Nếu câu hỏi chỉ cần 1 phần thông tin → CHỈ trả về phần đó.
+        Hãy trả lời bằng văn phong tự nhiên, dễ hiểu, giống người tư vấn.
 
-    Nếu dữ liệu không tồn tại → ghi **"Không có dữ liệu"**.
+        Không liệt kê máy móc theo dạng JSON hay key:value.
 
-    ==================================================
-     **PHÂN LOẠI CÂU HỎI & CÁCH TRẢ LỜI**
-    ==================================================
+        Không nhắc lại câu hỏi.
 
-    1 **Thông tin tổng quan**
-    - Ví dụ:
-    - "Chương trình đào tạo A là gì?"
-    - "Thông tin về chương trình đào tạo A"
-    → Trả về đầy đủ:
-    - Tên chương trình
-    - Mã
-    - Khoa
-    - Tổng tín chỉ
-    - Nội dung
-    - Danh sách học phần theo từng học kỳ
-    - Thống kê (nếu có)
+        Không thêm lời chào.
 
-    ---
+        ========================
+        CÁC LOẠI CÂU HỎI
+        ========================
 
-    2 **Hỏi về khoa**
-    - "Chương trình đào tạo A thuộc khoa nào?"
-    → Chỉ trả lời: **Tên khoa**
+        1. Nếu hỏi chương trình thuộc khoa nào  
+        → Trả lời ngắn gọn bằng 1 câu.
 
-    ---
+        ---
 
-    3 **Danh sách toàn bộ học phần**
-    - "Chương trình A gồm những học phần nào?"
-    → Trả về toàn bộ danh sách học phần, KHÔNG kèm thông tin khác.
+        2. Nếu hỏi về tín chỉ  
 
-    ---
+        Hãy phân biệt rõ:
+        - Tổng số tín chỉ
+        - Tín chỉ bắt buộc
+        - Tín chỉ tự chọn  
 
-    4 **Hỏi theo loại học phần**
-    Ví dụ:
-    - “Những học phần đại cương của chương trình A là gì?”
-    - “Những học phần tiên quyết…”
-    - “Những học phần tự do…”
-    - “Những học phần song hành…”
-    - “Chương trình A có những học phần đại cương nào?”
-    - “Chương trình A có những học phần tiên quyết nào?”
-    - “Chương trình A có những học phần tự do nào?”
-    - “Chương trình A có những học phần song hành?”
-    → Chỉ trả lời đúng danh sách loại đó.
+        Luôn tách theo:
+        - Hệ Cử nhân
+        - Hệ Kỹ sư  
 
-    ---
+        Khi trả lời, hãy diễn đạt thành đoạn văn tự nhiên, mạch lạc như người tư vấn học tập, 
+        không liệt kê khô khan theo dạng báo cáo.
 
-    5 **Học phần theo học kỳ**
-    - “Những học phần phải học trong học kỳ 3 của chương trình A?”
-    → Chỉ trả về danh sách học phần thuộc **học kỳ đó**.
+        Nếu người dùng chỉ hỏi một hệ → chỉ trả lời hệ đó.  
+        Nếu không nói rõ hệ → trả lời cả hai.
+        ---
 
-    ---
+        3. Nếu hỏi về các học phần ví dụ như: "Chương trình đào tạo A có những học phần nào?"  
 
-    6 **Học phần đồ án**
-    - “Những học phần đồ án của chương trình đào tạo A?”
-    - “Chương trình A có những học phần đồ án nào?”
-    - "trong chương trình đào tạo A những học phần nào là học phần đồ án?"
-    → Lọc theo từ khóa:
-    - "PBL""
+        Luôn hiểu rằng:
+        - Hệ Cử nhân là chương trình chuẩn.
+        - Hệ Kỹ sư là chương trình mở rộng, có thêm học phần so với hệ Cử nhân.
 
-    ---
-    ---
+        Cách trình bày:
 
-    7 **Hỏi loại của một học phần bất kỳ trong chương trình đào tạo  **
-    - “Học phần B của chương trình đào tạo A là loại học phần gì?”
-    - “Trong chương trình A học phần B là học phần gì?”
-    - “Trong chương trình A học phần B là loại học phần gì?”
-    → Lọc theo theo tên của học phần B và đưa ra tên loại học phần và số tín chỉ của học phần B
+        Hệ Cử nhân gồm các học phần:
+
+        - <Tên học phần> | <Loại học phần> | <Số tín chỉ> tín chỉ
+        (lặp cho toàn bộ danh sách, không được bỏ sót)
+
+        Hệ Kỹ sư học thêm các học phần:
+
+        - <Tên học phần> | <Loại học phần> | <Số tín chỉ> tín chỉ
+        (lặp cho toàn bộ danh sách học phần thuộc hệ Kỹ sư)
+
+        Không được dùng câu "Hệ Kỹ sư gồm các học phần" nếu hệ Kỹ sư là chương trình mở rộng.
+
+        Không được bỏ học phần nào có trong dữ liệu.
+
+        ---
+        4. Nếu hỏi theo loại học phần cụ thể  
+
+        Bao gồm các câu hỏi:
+
+        - Học phần đồ án → lọc các học phần có tên bắt đầu bằng "PBL"
+        - Học phần đại cương → lọc theo loai = HocPhanDaiCuong
+        - Học phần tự do → lọc theo loai = HocPhanTuDo
+        - Học phần kế tiếp → lọc theo loai = HocPhanKeTiep
+
+        → Trả lời giống định dạng câu (3):
+
+        Tên học phần | Loại học phần | Số tín chỉ  
+
+        Và luôn tách theo:
+        - Hệ Cử nhân
+        - Hệ Kỹ sư  
+
+        Nếu không có → ghi rõ: "Hiện chưa có học phần thuộc loại này trong chương trình."
+
+        ---
     
+        5. Nếu hỏi: "Chương trình đào tạo A là chương trình gì"  
 
-    ---
+        → Trả lời đầy đủ toàn bộ thông tin chương trình, gồm:
 
-    8 **Không xác định được loại câu hỏi**
-    → Trả về đầy đủ như mục (1).
+        - Tên chương trình
+        - Khoa
+        - Mô tả chương trình (từ dữ liệu)
+
+        Với từng hệ đào tạo:
+
+        Hệ Cử nhân:
+        - Tổng số tín chỉ
+        - Tín chỉ bắt buộc
+        - Tín chỉ tự chọn
+        - Danh sách toàn bộ học phần (mỗi học phần 1 dòng theo mẫu)
+
+        Hệ Kỹ sư:
+        - Tổng số tín chỉ
+        - Tín chỉ bắt buộc
+        - Tín chỉ tự chọn
+        - Danh sách các học phần học thêm
+
+        ---
+
+        6. Nếu câu hỏi không rõ loại  
+        → Tóm tắt ngắn gọn toàn bộ chương trình.
+            
+        ========================
+        LƯU Ý DIỄN ĐẠT:
+        ========================
+        Các cách hỏi sau được xem là tương đương nhau:
+
+        - "Công nghệ thông tin Nhật ..."
+        - "Chương trình Công nghệ thông tin Nhật ..."
+        - "Chương trình đào tạo Công nghệ thông tin Nhật ..."
+        - "Trong chương trình đào tạo Công nghệ thông tin Nhật ..."
+
+        Tất cả đều được hiểu là hỏi về cùng một chương trình đào tạo.
+
+        Không được vì khác cách diễn đạt mà kết luận là không có dữ liệu.        
+        ========================
+        QUY TẮC
+        ========================
+
+        - Nếu dữ liệu không có → ghi: "Hiện chưa có dữ liệu."
+        - Không bịa.
+        - Không suy luận ngoài JSON.
+        - Không được rút gọn danh sách học phần.
+        - Văn phong tự nhiên, thân thiện, đúng trọng tâm.
+        """
 
 
-    ==================================================
-    🎯 QUY TẮC ĐỊNH DẠNG TRẢ LỜI
-    ==================================================
-    - Plain text, sạch, dễ đọc.
-    - Không nhắc lại yêu cầu.
-    - Không thêm lời chúc.
-    - Không tự suy diễn ngoài data JSON.
-
-    """
-
-        # chọn model reasoning nếu có
         model_name = getattr(self, "model_reasoning", None) or "gpt-4o-mini"
 
         response = self.client.chat.completions.create(
             model=model_name,
             messages=[
-                {"role": "system", "content": "Bạn là trợ lý AI chuyên format dữ liệu chương trình đào tạo theo yêu cầu người dùng và dựa hoàn toàn vào dữ liệu JSON cung cấp."},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": "Bạn là trợ lý tư vấn chương trình đào tạo đại học, trả lời tự nhiên, chính xác dựa trên dữ liệu Neo4j."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
             ],
             temperature=0
         )
 
         return response.choices[0].message.content.strip()
+
 
     def get_list_course(self, data: list, question: str):
         """
@@ -585,22 +654,23 @@ class OpenAIHandler:
         -------------------------
         QUY TẮC TRẢ LỜI
         -------------------------
-        - Trả lời ngắn gọn, đúng trọng tâm.
-        - Chỉ liệt kê danh sách chương trình đào tạo.
+        - Trả lời tự nhiên và thân thiện với người dùng
+        - Liệt kê danh sách chương trình đào tạo.
         - Với mỗi CTĐT, trả về: 
             • Tên chương trình
-            • Mã chương trình (nếu có)
-            • Tổng số tín chỉ yêu cầu (nếu có)
+            • Mã chương trình 
+            • Khóa 
+             Hãy phân biệt rõ:
+            • Tổng số tín chỉ yêu cầu với hệ kỹ sư
+            • Tín chỉ bắt buộc với hệ kỹ sư
+            • Tín chỉ tự chọn với hệ kỹ sư
+            • Tổng số tín chỉ yêu cầu với hệ cữ nhân
+            • Tín chỉ bắt buộc với hệ cữ nhân
+            • Tín chỉ tự chọn với hệ cữ nhân
         - Không thêm mô tả hoặc thông tin khác.
         - Trả về dạng bullet list dễ đọc.
         - Nếu dữ liệu rỗng → trả về: "Không có dữ liệu".
 
-        -------------------------
-        ĐỊNH DẠNG TRẢ LỜI
-        -------------------------
-        Ví dụ:
-        - Tên: Công nghệ thông tin; Mã: 7480201; Tín chỉ: 150
-        - Tên: Kỹ thuật cơ khí; Mã: 7520103; Tín chỉ: 145
         """
 
         model_name = getattr(self, "model_reasoning", None) or "gpt-4o-mini"
@@ -616,238 +686,466 @@ class OpenAIHandler:
 
         return response.choices[0].message.content.strip()
 
-    def get_tien_quyet(self, data: list, question: str):
-        """
-        Format dữ liệu tiên quyết từ Neo4j và trả lời câu hỏi liên quan đến tiên quyết.
-        - data: list[dict] do neo4j_handle.get_tien_quyet() trả về
-        - question: câu hỏi người dùng
-        Trả về: plain text short answer (theo quy tắc, hoặc "Không có dữ liệu")
-        """
+    def get_hoc_phan_theo_hoc_ky_ctdt(self, question: str, data: dict):
 
-        # đảm bảo data là JSON string để nhét vào prompt
-        try:
-            data_json = json.dumps(data, ensure_ascii=False, indent=2)
-        except Exception:
-            data_json = str(data)
+        danh_sach = data.get("danh_sach_hoc_phan", [])
+        ten_ctdt = data.get("ten_chuong_trinh", "")
+
+        if not danh_sach:
+            return "Xin lỗi, tôi không tìm thấy học phần phù hợp với chương trình đào tạo này."
 
         prompt = f"""
-    Bạn là trợ lý AI chuyên trả lời câu hỏi về **quan hệ tiên quyết giữa các học phần**
-    trong một chương trình đào tạo, **dựa hoàn toàn** trên dữ liệu JSON từ Neo4j.
+    Bạn là trợ lý học vụ đại học.
 
-    ⭐ **QUY TẮC TUYỆT ĐỐI (bắt buộc):**
-    - Chỉ được dùng đúng dữ liệu có trong JSON dưới đây. KHÔNG ĐƯỢC BỊA hoặc SUY DIỄN ngoài dữ liệu.
-    - Nếu dữ liệu không đủ để trả lời chính xác → phải trả **"Không có dữ liệu"** (exact).
-    - Trả lời NGẮN GỌN, RÕ RÀNG, bằng tiếng Việt.
+    Dữ liệu học phần của chương trình đào tạo "{ten_ctdt}":
 
-    Dữ liệu Neo4j (JSON):
-    {data_json}
+    {danh_sach}
 
-    Câu hỏi người dùng: "{question}"
+    =================================
+    CÂU HỎI
+    =================================
+    "{question}"
 
-    =========================================
-    🎯 NHỮNG LOẠI CÂU HỎI VÀ CÁCH TRẢ LỜI (bắt buộc theo mẫu)
-    =========================================
+    =================================
+    QUY TẮC TRẢ LỜI
+    =================================
 
-    1) Liệt kê toàn bộ quan hệ tiên quyết trong một chương trìn đào tạo bất kỳ
-    Ví dụ câu hỏi:
-        -"trong chương trình công nghệ thông tin Nhật học phần nào là học phần tiên quyết"
-        - "Trong chương trình A có những quan hệ tiên quyết nào?"
-        - "Danh sách môn tiên quyết trong chương trình A này?"
-    Trả ví dụ:
-        - "A là tiên quyết của B"
-        - "C là tiên quyết của D"
-    (Trả mỗi quan hệ trên 1 dòng)
+    ### Trường hợp 1:
+    Nếu trong câu hỏi có nhắc đến học kỳ cụ thể:
+    → Chỉ trả lời các học phần thuộc học kỳ đó.
 
-    2) Hỏi tiên quyết của một học phần X (các môn phải học trước X) Trong chương trình đào tạo bất kỳ
-    Ví dụ:
-        - "Để học Vi xử lý chương trình A cần học trước môn nào?"
-        - "Trong chương trình A học phần tiên quyết của lập trình hướng đối tượng là gì?"
-        - "Môn Cấu trúc dữ liệu chương trình A có tiên quyết gì không?"
-    Nếu có: trả các tên môn (mỗi môn trên 1 dòng) kèm tiền tố ngắn:
-        - "Tiên quyết của X: A"
-        - "Tiên quyết của X: B"
-    Nếu không có → trả **"Học phần X không có tiên quyết"**
+    ### Trường hợp 2:
+    Nếu KHÔNG nhắc học kỳ:
+    → Trình bày học phần theo từng học kỳ, nhóm rõ ràng theo học kỳ.
 
-    3)Trong chương trình đào tạo bất kỳ môn nào yêu cầu X làm tiên quyết? (X → Z)
-    Ví dụ:
-        - "Trong chương trình A môn Lập trình C là tiên quyết cho những môn nào?"
-        - "Những môn nào trong chương trình A yêu cầu Toán A1 làm tiên quyết?"
-    Nếu có: trả danh sách môn (mỗi môn 1 dòng) kèm tiền tố ngắn:
-        - "Nếu trượt X, không được học: Z"
-        - hoặc "X là tiên quyết của: Z"
-    Nếu không có → trả **"Không có môn nào yêu cầu X là tiên quyết"**
+    =================================
+    LƯU Ý DIỄN ĐẠT
+    =================================
 
-    4) Trong chương trình đào tạo bất kỳ nếu trượt học phần X  thì không được học môn nào?
-    Ví dụ:
-        - "Trong chương trình A nếu tôi trượt Vi điều khiển thì không được học môn nào?"
-        - "Trong chương trình A thi rớt Giải tích 1 thì bị cấm học những môn gì?"
-    Xử lý giống mục (3): trả dạng:
-        - "Trong chương trình <tên CTĐT> bạn sẽ không được học: Z1, Z2"
-        (hoặc mỗi môn 1 dòng, nhưng cố gắng ngắn gọn 1 dòng nếu ít môn)
-    Nếu không có dữ liệu → "Không có dữ liệu"
+    Các cách hỏi sau được xem là tương đương nhau:
 
-    5) Hỏi quan hệ tiên quyết giữa hai học phần (C vs B) trong một chương trình đào tạo bất kỳ
-    Ví dụ:
-        - "Trong chương trình A C có phải tiên quyết của B không?"
-        - "Giữa Đại số và Giải tích trong chương trình A thì môn nào là tiên quyết?"
-    Nếu có quan hệ trực tiếp A → B → trả:
-        - "A là tiên quyết của B"
-    Nếu có quan hệ ngược B → A → trả:
-        - "B là tiên quyết của A"
-    Nếu không có quan hệ trực tiếp → trả:
-        - "Không tồn tại quan hệ tiên quyết giữa hai học phần này"
+    - "Công nghệ thông tin Nhật ..."
+    - "Chương trình Công nghệ thông tin Nhật ..."
+    - "Chương trình đào tạo Công nghệ thông tin Nhật ..."
+    - "Trong chương trình đào tạo Công nghệ thông tin Nhật ..."
 
-    =========================================
-    📌 LƯU Ý KĨ THUẬT
-    - Plain text, sạch, dễ đọc.
-    - Không in JSON lại, không giải thích cách tìm.
-    - Nếu tên học phần xuất hiện nhiều lần trong dữ liệu, chỉ liệt kê các tên không trùng (DISTINCT).
-    - Nếu dữ liệu chứa tên CTĐT, bạn có thể đưa tên CTĐT trong câu trả lời khi phù hợp (ví dụ mục 4).
-    - Luôn trả ngắn gọn, đúng trọng tâm.   
-    Bắt đầu trả lời:
+    Tất cả đều được hiểu là hỏi về cùng một chương trình đào tạo.
+
+    Không được vì khác cách diễn đạt mà kết luận là không có dữ liệu.
+
+    =================================
+    RÀNG BUỘC BẮT BUỘC
+    =================================
+
+    - Chỉ sử dụng dữ liệu đã cho.
+    - Không được suy đoán.
+    - Không thêm học phần ngoài danh sách.
+    - Không nhắc lại câu hỏi.
+    - Không giải thích.
+    - Không nhận xét.
+
+    =================================
+    ĐỊNH DẠNG TRÌNH BÀY
+    =================================
+
+    Tên học phần | Mã học phần | Số tín chỉ
+
+    Mỗi học phần một dòng.
+
+    Nếu trình bày nhiều học kỳ, mỗi học kỳ có tiêu đề:
+
+    Học kỳ X:
+    ---------------------------------
     """
-
-        # chọn model reasoning nếu có
-        model_name = getattr(self, "model_reasoning", None) or "gpt-4o-mini"
-
-        response = self.client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "Bạn là trợ lý AI chuyên format trả lời về quan hệ tiên quyết giữa học phần; chỉ dùng dữ liệu JSON cung cấp; không được bịa."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0
-        )
-
-        return response.choices[0].message.content.strip()
-
-
-    def get_song_hanh(self, data: list, question: str):
 
         try:
-            data_json = json.dumps(data, ensure_ascii=False, indent=2)
-        except Exception:
-            data_json = str(data)
+            model_name = getattr(self, "model_reasoning", None) or "gpt-4o-mini"
+
+            response = self.client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Bạn là trợ lý tư vấn chương trình đào tạo đại học, trả lời chính xác dựa trên dữ liệu Neo4j."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            print("❌ Lỗi GPT:", e)
+            return "Xin lỗi, hệ thống gặp lỗi khi xử lý câu hỏi."
+
+    def get_tien_quyet(self, question: str, data: dict):
+
+        danh_sach = data.get("danh_sach_tien_quyet", [])
+        ten_ctdt = data.get("ten_chuong_trinh", "")
+
+        if not danh_sach:
+            return "Xin lỗi, tôi không tìm thấy thông tin học phần tiên quyết cho chương trình đào tạo này."
 
         prompt = f"""
-    Bạn là trợ lý AI chuyên phân tích **quan hệ học phần song hành** trong CTĐT,
-    và bạn CHỈ ĐƯỢC sử dụng dữ liệu JSON dưới đây (không được bịa).
+    Bạn là trợ lý học vụ đại học.
 
-    ⭐⭐ QUY TẮC BẮT BUỘC ⭐⭐
-    - Chỉ dùng đúng dữ liệu trong JSON.
-    - Nếu không có dữ liệu phù hợp → trả “Không có dữ liệu”.
-    - Trả lời ngắn, rõ, đúng trọng tâm.
-    - Dùng đúng tên học phần trong JSON.
-    - Không in lại JSON.
+    Dữ liệu học phần tiên quyết của chương trình đào tạo "{ten_ctdt}":
 
-    ===========================================================
-    📌 DỮ LIỆU JSON TỪ NEO4J:
-    {data_json}
+    {danh_sach}
 
-    📌 CÂU HỎI NGƯỜI DÙNG: "{question}"
-    ===========================================================
+    =================================
+    CÂU HỎI
+    =================================
+    "{question}"
 
-    🎯 DẠNG CÂU HỎI PHẢI XỬ LÝ
-    ===========================================================
+    =================================
+    QUY TẮC HIỂU DỮ LIỆU
+    =================================
 
-    1) **Liệt kê toàn bộ quan hệ song hành**
-    Ví dụ:
-    - "Trong CTĐT A có những quan hệ song hành nào?"
-    → Trả:
-    - "A là học phần song hành với B"
+    Mỗi phần tử trong dữ liệu có dạng:
 
-    -----------------------------------------------------------
+    - hoc_phan_tien_quyet: học phần A
+    - hoc_phan_bi_tien_quyet: học phần B
+    - quan_he: "là học phần tiên quyết của"
+    → hiểu là: A là học phần tiên quyết của B
 
-    2) **Hỏi song hành của một học phần X**
-    Ví dụ:
-    - "Trong CTĐT A môn X song hành với môn nào?"
-    -"Học phần nào có mối quan hệ song hành với môn X trong CTĐT A?"
-    -"Trong CTĐT A học phần nào có thể học cùng lúc với môn X?"
-    -"trong CTĐT A tôi có thể học môn X cùng lúc với Y được không?"
-   
-     → Nếu hp1 = X → hp2 hoặc hp2 = X → hp1:
-        - "Song hành của X là Y"
-    → Nếu không có:
-        - "Học phần X không có học phần song hành"
+    - loai_hoc_phan_cua_hoc_phan_tien_quyet:
+    nếu chứa "HocPhanTienQuyet" thì học phần đó là học phần tiên quyết chính thức của chương trình đào tạo
 
-    -----------------------------------------------------------
+    =================================
+    CÁC TRƯỜNG HỢP CẦN TRẢ LỜI
+    =================================
 
-    3) **Hỏi hai môn có thể học cùng lúc không?**
-    Ví dụ:
-    - "Tôi có thể học A và B cùng lúc trong chương trình C không?"
-    - "Trong chương trình C A và B có phải song hành không?"
-    - "Trong chương trình C tôi có thể học A và B cùng lúc được không?"
+    ### Trường hợp 1
+    Câu hỏi dạng:
+    - "Chương trình đào tạo A có những học phần tiên quyết nào?"
+    - "Trong CTĐT A học phần nào là học phần tiên quyết?"
 
-    Nếu A ↔ B xuất hiện trong JSON:
+    -> PHẢI liệt kê **TẤT CẢ** học phần thỏa mãn:
+    - "loai_hoc_phan_cua_hoc_phan_tien_quyet" = HocPhanTienQuyet
+    - KHÔNG được bỏ sót
+    - KHÔNG được chọn đại diện
+    ---
 
-        ⚠ Lưu ý:
-        Trong JSON mới:
-        - Tiên quyết của A nằm trong trường:  tien_quyet_hp1  (kiểu: list)
-        - Tiên quyết của B nằm trong trường:  tien_quyet_hp2  (kiểu: list)
+    ### Trường hợp 2:
+    Câu hỏi dạng:
+    - "Trong chương trình đào tạo A để học môn X cần học trước môn nào?"
+    - "Trong chương trình đào tạo A học phần tiên quyết của học phần X là gì?"
+    - "Trong chương trình đào tạo A học phần X có tiên quyết gì không?"
 
-        • Nếu A và B đều **không có tiên quyết**:
-            → "Có, A và B là học phần song hành và đều không có học phần tiên quyết. Bạn có thể học cùng lúc."
+    QUY TẮC DIỄN GIẢI BẮT BUỘC:
 
-        • Nếu A có tiên quyết, B không có:
-            → "A và B là học phần song hành, nhưng để học A bạn cần hoàn thành: <danh_sách_tiên_quyết_A>. Sau đó có thể học song hành."
+    - Học phần X trong câu hỏi LUÔN LUÔN là "hoc_phan_bi_tien_quyet".
+    - Các học phần cần học trước X LUÔN LUÔN là các "hoc_phan_tien_quyet".
+    - TUYỆT ĐỐI KHÔNG được đảo ngược vai trò hai học phần này.
 
-        • Nếu B có tiên quyết, A không có:
-            → "A và B là học phần song hành, nhưng để học B bạn cần hoàn thành: <danh_sách_tiên_quyết_B>. Sau đó có thể học song hành."
+    CÁCH TRẢ LỜI:
 
-        • Nếu cả A và B đều có tiên quyết:
-            → "A và B là học phần song hành, nhưng bạn phải hoàn thành tiên quyết trước:
-                - Tiên quyết của A: ...
-                - Tiên quyết của B: ...
-            Sau khi hoàn thành mới được học song hành."
+    - Nếu KHÔNG tồn tại học phần X trong cột "hoc_phan_bi_tien_quyet":
+    → Trả lời đúng 1 câu:
+    "Không có học phần X trong chương trình đào tạo {ten_ctdt}."
 
-    Nếu **không phải song hành**:
-    → "Bạn không thể học A và B cùng lúc vì hai học phần này không phải là học phần song hành."
+    - Nếu CÓ:
+    → Trả lời theo mẫu BẮT BUỘC:
 
-    -----------------------------------------------------------
+    "Để học môn \"X\" trong chương trình đào tạo {ten_ctdt}, bạn cần học trước các học phần sau:"
 
-    4) **Liệt kê các cặp học phần song hành**
-    Ví dụ:
-    - "Các môn song hành trong chương trình C?"
-    → Trả:
-    - "A ↔ B"
+    Sau đó liệt kê TẤT CẢ học phần trong cột "hoc_phan_tien_quyet"
+    có quan hệ "là học phần tiên quyết của" với X.
 
-    -----------------------------------------------------------
+    TUYỆT ĐỐI KHÔNG:
+    - Không đảo ngược câu kiểu: "Để học A cần học trước B" nếu A là tiên quyết của B.
+    - Không tự diễn giải lại quan hệ.
 
-    5) **Kiểm tra trực tiếp A có song hành với B không**
-    Ví dụ:
-    - "Trong chương trình A X có phải song hành của Y không?"
-    → Nếu X ↔ Y tồn tại:
-        - "Có, X là học phần song hành với Y"
-    → Nếu không:
-        - "Không tồn tại quan hệ song hành giữa hai học phần này"
+    ---
 
-    ===========================================================
-    📌 LƯU Ý QUAN TRỌNG
-    - Tiên quyết là danh sách (list). Nếu list rỗng = không có tiên quyết.
-    - Không giải thích quy trình suy luận.
-    - Chỉ trả lời dựa trên JSON.
+    ### Trường hợp 3:
+    Câu hỏi dạng:
+    - "Trong chương trình đào tạo A học phần X là tiên quyết của học phần nào?"
 
-    Bắt đầu trả lời:
+    QUY TẮC DIỄN GIẢI BẮT BUỘC:
+
+    - Học phần X trong câu hỏi LUÔN LUÔN là "hoc_phan_tien_quyet".
+    - Các học phần mà X là tiên quyết của LUÔN LUÔN nằm trong cột "hoc_phan_bi_tien_quyet".
+    - Chỉ xét các bản ghi có:
+    hoc_phan_tien_quyet == X
+    - TUYỆT ĐỐI KHÔNG suy luận ngược chiều.
+
+    CÁCH TRẢ LỜI:
+
+    - Nếu KHÔNG tồn tại bản ghi nào có "hoc_phan_tien_quyet" == X:
+    → Trả lời đúng 1 câu:
+    "Không có học phần X trong chương trình đào tạo {ten_ctdt}."
+
+    - Nếu CÓ:
+    → Trả lời theo mẫu BẮT BUỘC:
+
+    "Trong chương trình đào tạo {ten_ctdt}, học phần \"X\" là học phần tiên quyết của các học phần sau:"
+
+    Sau đó liệt kê TẤT CẢ học phần trong cột "hoc_phan_bi_tien_quyet"
+    tương ứng với học phần X.
+
+
+    ---
+
+    ### Trường hợp 4:
+    Câu hỏi dạng:
+    - "Trong chương trình đào tạo A nếu rớt học phần X thì không được học học phần nào?"
+
+    QUY TẮC DIỄN GIẢI BẮT BUỘC:
+
+    - Học phần X trong câu hỏi LUÔN LUÔN là "hoc_phan_tien_quyet".
+    - Các học phần KHÔNG ĐƯỢC HỌC nếu rớt X LUÔN LUÔN nằm trong cột "hoc_phan_bi_tien_quyet".
+    - Chỉ xét các bản ghi có:
+    hoc_phan_tien_quyet == X
+    - TUYỆT ĐỐI KHÔNG diễn giải lại thành "để học X cần học trước môn nào".
+
+    CÁCH TRẢ LỜI:
+
+    - Nếu KHÔNG tồn tại bản ghi nào có "hoc_phan_tien_quyet" == X:
+    → Trả lời đúng 1 câu:
+    "Trong chương trình đào tạo {ten_ctdt}, học phần X không phải là học phần tiên quyết của học phần nào."
+
+    - Nếu CÓ:
+    → Trả lời theo mẫu BẮT BUỘC:
+
+    "Trong chương trình đào tạo {ten_ctdt}, nếu bạn rớt học phần \"X\" thì bạn sẽ không được học các học phần sau:"
+
+    Sau đó liệt kê TẤT CẢ học phần trong cột "hoc_phan_bi_tien_quyet"
+    tương ứng với học phần X.
+
+    TUYỆT ĐỐI KHÔNG:
+    - Không dùng cấu trúc "Để học môn X, cần học trước..."
+    - Không đảo chiều quan hệ.
+
+    ---
+
+    ### Trường hợp 5
+    Câu hỏi dạng:
+    - "Trong chương trình đào tạo A học phần X có phải là học phần tiên quyết của học phần Y không?"
+
+    → Thực hiện các bước:
+    1. Kiểm tra X có tồn tại trong cột "hoc_phan_tien_quyet" không.
+    Nếu không → trả lời không có học phần X trong chương trình đào tạo "{ten_ctdt}".
+    2. Kiểm tra Y có tồn tại trong cột "hoc_phan_bi_tien_quyet" không.
+    Nếu không → trả lời không có học phần Y trong chương trình đào tạo "{ten_ctdt}".
+    3. Nếu cả hai đều tồn tại:
+    - Nếu có quan hệ A là tiên quyết của B với A = X và B = Y
+        → trả lời: học phần X là học phần tiên quyết của học phần Y.
+    - Ngược lại → trả lời: học phần X không phải là học phần tiên quyết của học phần Y.
+
+    ========================
+    LƯU Ý DIỄN ĐẠT:
+    ========================
+    Các cách hỏi sau được xem là tương đương nhau:
+
+    - "Công nghệ thông tin Nhật ..."
+    - "Chương trình Công nghệ thông tin Nhật ..."
+    - "Chương trình đào tạo Công nghệ thông tin Nhật ..."
+    - "Trong chương trình đào tạo Công nghệ thông tin Nhật ..."
+
+    Tất cả đều được hiểu là hỏi về cùng một chương trình đào tạo.
+
+    Không được vì khác cách diễn đạt mà kết luận là không có dữ liệu.    
+    =================================
+    RÀNG BUỘC BẮT BUỘC
+    =================================
+
+    - Chỉ sử dụng dữ liệu đã cho.
+    - Không suy đoán.
+    - Không thêm học phần ngoài danh sách.
+    - Không nhắc lại câu hỏi.
+    - Không giải thích.
+    - Không nhận xét.
+    - Trả lời đúng trọng tâm câu hỏi.
+
+    =================================
+    ĐỊNH DẠNG TRẢ LỜI
+    =================================
+
+    - Văn bản ngắn gọn, rõ ràng.
+    - Nếu liệt kê nhiều học phần → phân tách bằng dấu phẩy.
     """
 
-        model_name = getattr(self, "model_reasoning", None) or "gpt-4o-mini"
+        try:
+            model_name = getattr(self, "model_reasoning", None) or "gpt-4o-mini"
 
-        response = self.client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Bạn là trợ lý AI chuyên phân tích quan hệ học phần SONG HÀNH. "
-                        "Bạn chỉ được dùng dữ liệu JSON, không được tự suy diễn."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0
-        )
+            response = self.client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Bạn là trợ lý tư vấn chương trình đào tạo đại học, trả lời chính xác dựa trên dữ liệu Neo4j."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0
+            )
 
-        return response.choices[0].message.content.strip()
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            print("❌ Lỗi GPT:", e)
+            return "Xin lỗi, hệ thống gặp lỗi khi xử lý câu hỏi."
+
+
+    def get_song_hanh(self, question: str, data: dict):
+
+        danh_sach = data.get("song_hanh", [])
+        ten_ctdt = data.get("ten_chuong_trinh", "")
+
+        if not danh_sach:
+            return f"Trong chương trình đào tạo {ten_ctdt}, không có học phần song hành."
+
+        prompt = f"""
+    Bạn là trợ lý học vụ đại học.
+
+    Dữ liệu quan hệ học phần song hành của chương trình đào tạo "{ten_ctdt}":
+
+    {danh_sach}
+
+    =================================
+    CÂU HỎI
+    =================================
+    "{question}"
+
+    =================================
+    QUY TẮC HIỂU DỮ LIỆU
+    =================================
+
+    Mỗi phần tử trong dữ liệu có dạng:
+
+    - hoc_phan_1
+    - hoc_phan_2
+    - quan_he: "là học phần song hành với"
+
+    → hiểu là:
+    hoc_phan_1 và hoc_phan_2 có thể học song song trong cùng học kỳ.
+
+    Mỗi học phần có thể kèm:
+    - tien_quyet: danh sách học phần phải học trước
+
+    =================================
+    CÁC TRƯỜNG HỢP CẦN TRẢ LỜI
+    =================================
+
+    ### Trường hợp 1
+    Câu hỏi dạng:
+    - "Trong chương trình đào tạo A có những quan hệ song hành nào?"
+    - "Chương trình đào tạo A có những học phần song hành nào?"
+
+    → PHẢI:
+    - Duyệt TOÀN BỘ danh sách
+    - Liệt kê TẤT CẢ các cặp học phần có quan hệ song hành
+    - KHÔNG bỏ sót
+    - KHÔNG chọn đại diện
+    - KHÔNG gộp
+
+    Trả lời theo mẫu:
+
+    "Trong chương trình đào tạo {ten_ctdt}, các học phần có quan hệ song hành bao gồm:"
+    Sau đó liệt kê từng cặp:
+    "X" song hành với "Y"
+
+    ---
+
+    ### Trường hợp 2
+    Câu hỏi dạng:
+    - "Trong chương trình đào tạo A học phần X có mối quan hệ với học phần nào?"
+    - "Học phần X có học song hành với học phần nào không?"
+
+    QUY TẮC:
+    - Kiểm tra học phần X có tồn tại trong:
+    hoc_phan_1 HOẶC hoc_phan_2 hay không
+    - Duyệt TOÀN BỘ danh sách
+
+    CÁCH TRẢ LỜI:
+    - Nếu KHÔNG tồn tại trong cả hai cột:
+    → Trả lời đúng 1 câu:
+    "Không có học phần X trong chương trình đào tạo {ten_ctdt}."
+
+    - Nếu CÓ:
+    → Trả lời theo mẫu:
+
+    "Trong chương trình đào tạo {ten_ctdt}, học phần \"X\" có quan hệ song hành với các học phần sau:"
+
+    Sau đó liệt kê TẤT CẢ học phần song hành với X
+    (không phân biệt X nằm ở cột hoc_phan_1 hay hoc_phan_2)
+
+    ---
+
+    ### Trường hợp 3
+    Câu hỏi dạng:
+    - "Tôi có thể học X và Y cùng lúc trong chương trình A không?"
+    - "Trong chương trình A học phần X và học phần Y có phải song hành không?"
+
+    Kiểm tra xem thử học phần X có đứng chung 1 hàng với học phần Y trong tham số đầu vào mảng data không
+        *   Nếu có trả lời: "Bạn có thể học học phần X và học phần Y cùng lúc trong chương trình đào tạo {ten_ctdt}.
+        * Nếu không trả lời "Bạn không thể học học phần X và học phần Y cùng lúc trong chương trình đào tạo {ten_ctdt}.
+
+    ========================
+    LƯU Ý DIỄN ĐẠT:
+    ========================
+    Các cách hỏi sau được xem là tương đương nhau:
+
+    - "Công nghệ thông tin Nhật ..."
+    - "Chương trình Công nghệ thông tin Nhật ..."
+    - "Chương trình đào tạo Công nghệ thông tin Nhật ..."
+    - "Trong chương trình đào tạo Công nghệ thông tin Nhật ..."
+
+    Tất cả đều được hiểu là hỏi về cùng một chương trình đào tạo.
+
+    Không được vì khác cách diễn đạt mà kết luận là không có dữ liệ
+
+    =================================
+    RÀNG BUỘC BẮT BUỘC
+    =================================
+
+    - Chỉ sử dụng dữ liệu đã cho
+    - Không suy đoán
+    - Không thêm học phần ngoài danh sách
+    - Không nhắc lại câu hỏi
+    - Không giải thích thêm
+    - Trả lời đúng trọng tâm
+
+    =================================
+    ĐỊNH DẠNG TRẢ LỜI
+    =================================
+
+    - Văn bản ngắn gọn
+    - Nếu liệt kê nhiều học phần → phân tách bằng dấu phẩy
+    """
+
+        try:
+            model_name = getattr(self, "model_reasoning", None) or "gpt-4o-mini"
+
+            response = self.client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Bạn là trợ lý tư vấn chương trình đào tạo đại học, trả lời chính xác dựa trên dữ liệu Neo4j."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            print("❌ Lỗi GPT:", e)
+            return "Xin lỗi, hệ thống gặp lỗi khi xử lý câu hỏi."
 
 
 

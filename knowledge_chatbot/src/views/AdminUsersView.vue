@@ -120,8 +120,14 @@ const deleteTarget = ref(null)
 onMounted(loadData)
 
 async function loadData() {
-  const res = await api.get('/admin/users')
-  rows.value = res.data
+  try{
+    const res = await api.get('/admin/users')
+    rows.value = res.data
+  }
+  catch (e) {
+    console.error(e)
+    alert("Không có quyền admin hoặc token hết hạn")
+  }
 }
 
 /* ================= EDIT ================= */

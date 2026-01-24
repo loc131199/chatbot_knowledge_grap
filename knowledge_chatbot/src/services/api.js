@@ -18,3 +18,6 @@ api.interceptors.request.use((config) => {
 });
 
 export default api;
+export const deleteConversation = async (conversationId) => {
+  return api.delete(`/chat/conversations/${conversationId}`);
+};

@@ -25,8 +25,7 @@ export const useAuthStore = defineStore('auth', {
 
       // user tối thiểu (role lấy từ token, backend không trả thì vẫn ok)
       this.access_token = data.access_token
-      this.user = { username }
-
+      this.user = { username }      
       localStorage.setItem('user', JSON.stringify(this.user))
     },
 

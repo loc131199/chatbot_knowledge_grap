@@ -19,15 +19,16 @@ router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('access_token')
   const user = JSON.parse(localStorage.getItem('user'))
   //login
-  if (to.meta.requiresAuth && !token) {
-    next('/login')
-  } 
-  
-  if (to.meta.requiresAdmin && user.role !== 'admin'){
-    alert('Bạn ko có quyền truy cập trang này')
-    return next('/')
-  }
-  next()
+if (to.meta.requiresAuth && !token) {
+  return next('/login')
+} 
+
+if (to.meta.requiresAdmin && (!user || user.role !== 'admin')){
+  alert('Bạn ko có quyền truy cập trang này')
+  return next('/')
+}
+
+next()
 })
 
 export default router

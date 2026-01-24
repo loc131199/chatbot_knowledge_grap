@@ -91,6 +91,15 @@ class ChatbotLogic:
 
             # Gửi toàn bộ danh sách sang OpenAI để format/trả lời có logic
             return self.openai_handler.get_list_course(data, question_transformed)
+      
+        elif intent == "hoi_hoc_phan_theo_hoc_ky_ctdt":
+            data = self.neo4j_handle.get_hoc_phan_theo_hoc_ky_ctdt(question)
+
+            if not data:
+                return "Xin lỗi, tôi không tìm thấy học phần cho chương trình đào tạo này."
+
+            return self.openai_handler.get_hoc_phan_theo_hoc_ky_ctdt(question, data)
+
         
         elif intent == "hoi_tien_quyet_hoc_phan_ctdt":
             data = self.neo4j_handle.get_tien_quyet(question)
@@ -102,7 +111,7 @@ class ChatbotLogic:
                 )
 
             # gửi sang OpenAI để suy luận + trả đúng dạng (4): "Nếu trượt X thì không học được môn nào?"
-            return self.openai_handler.get_tien_quyet(data, question)
+            return self.openai_handler.get_tien_quyet(question,data)
 
         elif intent == "hoi_hoc_phan_song_hanh_ctdt":
                     # 1) Lấy dữ liệu song hành từ Neo4j (neo4j_handle.get_song_hanh)
@@ -114,7 +123,7 @@ class ChatbotLogic:
                             "Mình không tìm thấy quan hệ học phần song hành phù hợp với câu hỏi của bạn. "
                             "Có thể tên học phần hoặc chương trình đào tạo chưa chính xác."
                         )
-                    return self.openai_handler.get_song_hanh(data, question)
+                    return self.openai_handler.get_song_hanh( question,data)
 
         else:
             bm25_results = self.neo4j_handle.bm25_search(question_transformed)

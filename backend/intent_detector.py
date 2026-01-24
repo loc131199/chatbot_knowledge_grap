@@ -10,10 +10,11 @@ INTENTS = {
     "chuan_ngoai_ngu_ctdt": "Hỏi về chuẩn ngoại ngữ đầu ra của 1 CTĐT cụ thể (có tên CTĐT).", 
     "hoi_chuan_ngoai_ngu_muc_diem": "Hỏi về mức điểm ngoại ngữ (IELTS, TOEIC, JLPT...) để tốt nghiệp.", 
     "hoi_khung_nang_luc_ngoai_ngu": "Hỏi về khung năng lực ngoại ngữ 6 bậc Việt Nam (CEFR Việt Nam).", 
-    "hoi_thong_tin_ctdt": "Hỏi về thông tin của một chương trình đào tạo (tên, khoa, tín chỉ, học phần, học kỳ...).", 
+    "hoi_thong_tin_ctdt": "Hỏi về thông tin của một chương trình đào tạo (tên, khoa, tín chỉ, học phần).", 
     "hoi_danh_sach_ctdt": "Hỏi danh sách tất cả các chương trình đào tạo.", 
     "hoi_tien_quyet_hoc_phan_ctdt": "Hỏi về quan hệ tiên quyết của một học phần trong một CTĐT.",
     "hoi_hoc_phan_song_hanh_ctdt": "Hỏi về quan hệ song hành của một học phần trong một CTĐT.",
+    "hoi_hoc_phan_theo_hoc_ky_ctdt": "Hỏi học phần của chương trình đào tạo theo từng học kỳ hoặc theo một học kỳ cụ thể.",
     "hoi_dieu_kien_tot_nghiep_chung": "Khi có từ khóa điều kiện tốt nghiệp là gì"
 }
 
@@ -60,6 +61,39 @@ class IntentDetector:
 
         if "chuẩn ngoại ngữ" in q:
             return "hoi_chuan_ngoai_ngu_dau_ra_chung"
+        # Học phần theo học kỳ
+        if any(k in q for k in [
+            "học kỳ",
+            "hk ",
+            "hk1","hk2","hk3","hk4","hk5","hk6","hk7","hk8","hk9","hk10",
+            "học trong kỳ",
+            "theo từng học kỳ",
+            "mỗi học kỳ"
+        ]):
+            return "hoi_hoc_phan_theo_hoc_ky_ctdt"
+
+        # Học phần theo loại (đại cương, tự do, kế tiếp, đồ án...)
+        if any(k in q for k in [
+            "đại cương",
+            "tự do",
+            "kế tiếp",
+            "đồ án",
+        ]):
+            return "hoi_thong_tin_ctdt"
+        if any(k in q for k in [
+                    "tiên quyết",
+                    "học trước",
+                    "rớt",
+                    "không vượt qua"
+                ]):
+            return "hoi_tien_quyet_hoc_phan_ctdt"
+        if any(k in q for k in [
+                    "song hành",
+                    "học cùng",
+                    "cùng lúc",
+                    "đồng thời"
+                ]):
+            return "hoi_hoc_phan_song_hanh_ctdt"
         # ======================
         # GPT fallback
         # ======================
@@ -97,8 +131,12 @@ class IntentDetector:
     6 hoi_danh_sach_ctdt
     7 hoi_tien_quyet_hoc_phan_ctdt
     8 hoi_hoc_phan_song_hanh_ctdt
-
-    Chỉ trả về đúng mã intent.
+    9 hoi_hoc_phan_theo_hoc_ky_ctdt
+    → Hỏi học phần của chương trình đào tạo theo học kỳ, ví dụ:
+    - "CTĐT A học kỳ 5 học môn gì"
+    - "CTĐT A học những môn nào theo từng học kỳ"
+    - "Học kỳ 3 của CTĐT A có những môn gì"   
+        Chỉ trả về đúng mã intent.
 
     Câu hỏi: "{question}"
     """
