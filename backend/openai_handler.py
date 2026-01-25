@@ -582,8 +582,59 @@ class OpenAIHandler:
         - Danh sách các học phần học thêm
 
         ---
+        
+        6. Nếu hỏi: "Học phần X trong chương trình đào tạo A là loại học phần gì?"
 
-        6. Nếu câu hỏi không rõ loại  
+        📌 Các dạng câu hỏi tương đương:
+
+        "Học phần X thuộc loại học phần nào?"
+
+        "Môn X là học phần gì trong CTĐT A?"
+
+        "X là học phần tự chọn hay bắt buộc?"
+
+        "Học phần X có bao nhiêu tín chỉ?"
+
+        - QUY TẮC BẮT BUỘC
+
+        Phải duyệt TOÀN BỘ danh sách học phần trong dữ liệu
+
+        So khớp tên học phần X không phân biệt hoa / thường
+
+        Cho phép khác biệt nhỏ về:
+
+        dấu tiếng Việt
+
+        khoảng trắng
+
+        Không được kết luận không có chỉ vì khác cách viết
+
+        - CÁCH XỬ LÝ
+
+        Tìm học phần có ten_hoc_phan trùng hoặc gần đúng với X
+
+        Nếu không tìm thấy:
+        → Trả lời đúng 1 câu:
+
+        Không tìm thấy học phần X trong chương trình đào tạo.
+
+
+        Nếu tìm thấy học phần X:
+
+        Lấy đúng các thông tin:
+
+        loai (loại học phần)
+
+        so_tin_chi
+
+        CÁCH TRẢ LỜI (VĂN PHONG TƯ VẤN)
+
+        Trả lời bằng 1 hoặc 2 câu tự nhiên, theo mẫu:
+
+        Học phần X là học phần <tên loại học phần>, có <số tín chỉ> tín chỉ.
+
+        ---   
+        7 Nếu câu hỏi không rõ loại  
         → Tóm tắt ngắn gọn toàn bộ chương trình.
             
         ========================
@@ -654,7 +705,7 @@ class OpenAIHandler:
         -------------------------
         QUY TẮC TRẢ LỜI
         -------------------------
-        - Trả lời tự nhiên và thân thiện với người dùng
+        - Trả lời tự nhiên, ngắn gọn và thân thiện với người dùng
         - Liệt kê danh sách chương trình đào tạo.
         - Với mỗi CTĐT, trả về: 
             • Tên chương trình
@@ -670,7 +721,7 @@ class OpenAIHandler:
         - Không thêm mô tả hoặc thông tin khác.
         - Trả về dạng bullet list dễ đọc.
         - Nếu dữ liệu rỗng → trả về: "Không có dữ liệu".
-
+        
         """
 
         model_name = getattr(self, "model_reasoning", None) or "gpt-4o-mini"
@@ -962,7 +1013,21 @@ class OpenAIHandler:
     - Không giải thích.
     - Không nhận xét.
     - Trả lời đúng trọng tâm câu hỏi.
+    
+    =================================
+    QUY TẮC BẮT BUỘC
+    =================================
+    - Phải duyệt TOÀN BỘ danh sách học phần trong dữ liệu
 
+    - So khớp tên học phần X không phân biệt hoa / thường
+
+    - Cho phép khác biệt nhỏ về:
+
+    - dấu tiếng Việt
+
+    - khoảng trắng
+
+    - Không được kết luận không có chỉ vì khác cách viết
     =================================
     ĐỊNH DẠNG TRẢ LỜI
     =================================
@@ -1115,6 +1180,20 @@ class OpenAIHandler:
     - Không giải thích thêm
     - Trả lời đúng trọng tâm
 
+    =================================
+    QUY TẮC BẮT BUỘC
+    =================================
+    - Phải duyệt TOÀN BỘ danh sách học phần trong dữ liệu
+
+    - So khớp tên học phần X không phân biệt hoa / thường
+
+    - Cho phép khác biệt nhỏ về:
+
+    - dấu tiếng Việt
+
+    - khoảng trắng
+
+    - Không được kết luận không có chỉ vì khác cách viết
     =================================
     ĐỊNH DẠNG TRẢ LỜI
     =================================
